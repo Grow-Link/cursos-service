@@ -1,10 +1,20 @@
 package com.growlink.cursos.adapter.web;
 
 import com.growlink.cursos.adapter.web.dto.ActualizarPrerequisitosRequest;
+import com.growlink.cursos.adapter.web.dto.CompletadoResponse;
+import com.growlink.cursos.adapter.web.dto.CompletarCursoRequest;
 import com.growlink.cursos.adapter.web.dto.CrearCursoRequest;
 import com.growlink.cursos.adapter.web.dto.CursoResponse;
+import com.growlink.cursos.adapter.web.dto.EditarCursoRequest;
+import com.growlink.cursos.adapter.web.dto.EstadoRoadmapResponse;
+import com.growlink.cursos.adapter.web.dto.SugerirPrerequisitosRequest;
+import com.growlink.cursos.adapter.web.dto.SugerirPrerequisitosResponse;
 import com.growlink.cursos.application.CursoService;
+import com.growlink.cursos.application.RoadmapService;
+import com.growlink.cursos.domain.Categoria;
 import com.growlink.cursos.domain.Curso;
+import com.growlink.cursos.domain.Nivel;
+import com.growlink.cursos.infrastructure.security.AuthenticatedUser;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -17,16 +27,18 @@ import java.util.List;
 public class CursoController {
 
     private final CursoService cursoService;
+    private final RoadmapService roadmapService;
 
-    public CursoController(CursoService cursoService) {
+    public CursoController(CursoService cursoService, RoadmapService roadmapService) {
         this.cursoService = cursoService;
+        this.roadmapService = roadmapService;
     }
 
     @PostMapping
     public ResponseEntity<CursoResponse> crear(@Valid @RequestBody CrearCursoRequest request) {
         Curso curso = cursoService.crear(request.titulo(), request.descripcion(), request.categoria(),
-                request.nivel(), request.habilidades(), request.linkContenido(), request.publicadorUsuarioId(),
-                request.prerequisitoIds());
+                request.nivel(), request.habilidadIds(), request.linkContenido(), request.publicadorUsuarioId(),
+                request.prerequisitoIds(), AuthenticatedUser.currentUserId(), AuthenticatedUser.isAdmin());
         return ResponseEntity.status(HttpStatus.CREATED).body(aRespuesta(curso));
     }
 
@@ -35,18 +47,68 @@ public class CursoController {
         return aRespuesta(cursoService.obtener(id));
     }
 
-    // HU-07: "Mis cursos" del publicador
+    // Sin publicadorUsuarioId: HU-13, catalogo general (solo activos, filtros opcionales)
+    // Con publicadorUsuarioId: HU-07, "Mis cursos" del publicador (incluye inactivos)
     @GetMapping
-    public List<CursoResponse> listarPorPublicador(@RequestParam Long publicadorUsuarioId) {
-        return cursoService.listarPorPublicador(publicadorUsuarioId).stream().map(this::aRespuesta).toList();
+    public List<CursoResponse> listar(@RequestParam(required = false) Long publicadorUsuarioId,
+                                       @RequestParam(required = false) Categoria categoria,
+                                       @RequestParam(required = false) Nivel nivel) {
+        List<Curso> cursos = publicadorUsuarioId != null
+                ? cursoService.listarPorPublicador(publicadorUsuarioId)
+                : cursoService.catalogo(categoria, nivel);
+        return cursos.stream().map(this::aRespuesta).toList();
     }
 
-    // preview de HU-08: solo la parte de prerequisitos, ver nota en CursoService
+    // HU-10: dado un roadmap guardado, cuales de sus cursos ya no estan activos
+    @GetMapping("/estado-roadmap")
+    public EstadoRoadmapResponse estadoRoadmap(@RequestParam List<Long> ids) {
+        return EstadoRoadmapResponse.from(cursoService.idsInactivosDe(ids));
+    }
+
+    // Para preseleccionar (editables) prerequisitos en el formulario de publicar
+    // curso. Reutiliza la misma infraestructura de IA que el roadmap (ver RoadmapService).
+    @PostMapping("/sugerir-prerequisitos")
+    public SugerirPrerequisitosResponse sugerirPrerequisitos(@Valid @RequestBody SugerirPrerequisitosRequest request) {
+        var resultado = roadmapService.sugerirPrerequisitos(request.categoria(), request.nivel(), request.titulo(),
+                request.descripcion());
+        return SugerirPrerequisitosResponse.from(resultado);
+    }
+
     @PutMapping("/{id}/prerequisitos")
     public CursoResponse actualizarPrerequisitos(@PathVariable Long id,
                                                   @RequestBody ActualizarPrerequisitosRequest request) {
-        cursoService.actualizarPrerequisitos(id, request.prerequisitoIds());
+        cursoService.actualizarPrerequisitos(id, request.prerequisitoIds(),
+                AuthenticatedUser.currentUserId(), AuthenticatedUser.isAdmin());
         return aRespuesta(cursoService.obtener(id));
+    }
+
+    // HU-08: editar titulo, descripcion, nivel, habilidades, link
+    @PutMapping("/{id}")
+    public CursoResponse editar(@PathVariable Long id, @Valid @RequestBody EditarCursoRequest request) {
+        Curso curso = cursoService.editar(id, request.titulo(), request.descripcion(), request.nivel(),
+                request.habilidadIds(), request.linkContenido(),
+                AuthenticatedUser.currentUserId(), AuthenticatedUser.isAdmin());
+        return aRespuesta(curso);
+    }
+
+    // HU-09: baja logica, no borra la fila
+    @PatchMapping("/{id}/baja")
+    public ResponseEntity<Void> darDeBaja(@PathVariable Long id) {
+        cursoService.darDeBaja(id, AuthenticatedUser.currentUserId(), AuthenticatedUser.isAdmin());
+        return ResponseEntity.noContent().build();
+    }
+
+    // HU-14: marcar un curso como completado
+    @PostMapping("/{id}/completar")
+    public ResponseEntity<Void> completar(@PathVariable Long id, @Valid @RequestBody CompletarCursoRequest request) {
+        cursoService.completar(id, request.usuarioId());
+        return ResponseEntity.status(HttpStatus.CREATED).build();
+    }
+
+    // HU-15: historial de completados de un usuario, incluye cursos ya inactivos
+    @GetMapping("/completados")
+    public List<CompletadoResponse> completados(@RequestParam Long usuarioId) {
+        return cursoService.completados(usuarioId).stream().map(CompletadoResponse::from).toList();
     }
 
     private CursoResponse aRespuesta(Curso curso) {

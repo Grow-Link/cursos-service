@@ -15,6 +15,13 @@ spring:
   jackson:
     default-property-inclusion: non_null
 
+jwt:
+  secret: ${GROWLINK_JWT_SECRET}
+
+# La integracion real con la API de Claude (ClaudeRoadmapAiClient) solo se
+# activa si la variable de entorno CLAUDE_API_KEY esta configurada; mientras
+# tanto RoadmapService usa el modo de respaldo (ver README).
+
 logging:
   level:
     com.growlink.cursos: INFO

@@ -2,8 +2,8 @@ package com.growlink.cursos.domain;
 
 import jakarta.persistence.*;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 @Entity
 @Table(name = "curso")
@@ -27,12 +27,12 @@ public class Curso {
     @Column(nullable = false)
     private Nivel nivel;
 
-    // por ahora es texto libre, no un catalogo cerrado por categoria
-    // eso queda pendiente, se anota en el README
-    @ElementCollection(fetch = FetchType.EAGER)
-    @CollectionTable(name = "curso_habilidad", joinColumns = @JoinColumn(name = "curso_id"))
-    @Column(name = "habilidad")
-    private List<String> habilidades = new ArrayList<>();
+    // catalogo cerrado: curso_habilidad referencia ids de Habilidad, ya no texto libre
+    @ManyToMany(fetch = FetchType.EAGER)
+    @JoinTable(name = "curso_habilidad",
+            joinColumns = @JoinColumn(name = "curso_id"),
+            inverseJoinColumns = @JoinColumn(name = "habilidad_id"))
+    private Set<Habilidad> habilidades = new LinkedHashSet<>();
 
     private String linkContenido;
 
@@ -47,15 +47,31 @@ public class Curso {
     }
 
     public Curso(String titulo, String descripcion, Categoria categoria, Nivel nivel,
-                 List<String> habilidades, String linkContenido, Long publicadorUsuarioId) {
+                 Set<Habilidad> habilidades, String linkContenido, Long publicadorUsuarioId) {
         this.titulo = titulo;
         this.descripcion = descripcion;
         this.categoria = categoria;
         this.nivel = nivel;
-        this.habilidades = new ArrayList<>(habilidades);
+        this.habilidades = new LinkedHashSet<>(habilidades);
         this.linkContenido = linkContenido;
         this.publicadorUsuarioId = publicadorUsuarioId;
         this.activo = true;
+    }
+
+    // HU-08: editar titulo, descripcion, nivel, habilidades y link.
+    // La categoria no se edita aqui porque las habilidades estan atadas a ella.
+    public void editar(String titulo, String descripcion, Nivel nivel, Set<Habilidad> habilidades,
+                        String linkContenido) {
+        this.titulo = titulo;
+        this.descripcion = descripcion;
+        this.nivel = nivel;
+        this.habilidades = new LinkedHashSet<>(habilidades);
+        this.linkContenido = linkContenido;
+    }
+
+    // HU-09: baja logica, no se borra la fila
+    public void darDeBaja() {
+        this.activo = false;
     }
 
     public Long getId() {
@@ -78,7 +94,7 @@ public class Curso {
         return nivel;
     }
 
-    public List<String> getHabilidades() {
+    public Set<Habilidad> getHabilidades() {
         return habilidades;
     }
 

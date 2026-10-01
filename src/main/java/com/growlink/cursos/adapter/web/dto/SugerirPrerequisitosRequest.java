@@ -5,16 +5,10 @@ import com.growlink.cursos.domain.Nivel;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
-import java.util.List;
-
-public record CrearCursoRequest(
-        @NotBlank String titulo,
-        String descripcion,
+public record SugerirPrerequisitosRequest(
         @NotNull Categoria categoria,
         @NotNull Nivel nivel,
-        List<Long> habilidadIds,
-        String linkContenido,
-        @NotNull Long publicadorUsuarioId,
-        List<Long> prerequisitoIds
+        @NotBlank String titulo,
+        String descripcion
 ) {
 }
