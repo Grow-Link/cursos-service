@@ -1,0 +1,20 @@
+server:
+  port: 8086
+
+spring:
+  application:
+    name: cursos-service
+  datasource:
+    url: jdbc:postgresql://localhost:5437/cursos
+    username: growlink
+    password: growlink
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+  jackson:
+    default-property-inclusion: non_null
+
+logging:
+  level:
+    com.growlink.cursos: INFO
