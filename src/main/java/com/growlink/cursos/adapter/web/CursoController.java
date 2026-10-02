@@ -15,6 +15,8 @@ import com.growlink.cursos.domain.Categoria;
 import com.growlink.cursos.domain.Curso;
 import com.growlink.cursos.domain.Nivel;
 import com.growlink.cursos.infrastructure.security.AuthenticatedUser;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -24,7 +26,11 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/cursos")
+@Tag(name = "Cursos")
 public class CursoController {
+
+    private static final String NOTA_DUENO_O_ADMIN =
+            "Requiere ser el publicador dueño del curso, o tener rol ADMIN (cualquier curso).";
 
     private final CursoService cursoService;
     private final RoadmapService roadmapService;
@@ -34,6 +40,8 @@ public class CursoController {
         this.roadmapService = roadmapService;
     }
 
+    @Operation(summary = "Crear curso", description = NOTA_DUENO_O_ADMIN
+            + " El publicadorUsuarioId del body debe ser el del propio usuario (salvo ADMIN).")
     @PostMapping
     public ResponseEntity<CursoResponse> crear(@Valid @RequestBody CrearCursoRequest request) {
         Curso curso = cursoService.crear(request.titulo(), request.descripcion(), request.categoria(),
@@ -74,6 +82,7 @@ public class CursoController {
         return SugerirPrerequisitosResponse.from(resultado);
     }
 
+    @Operation(summary = "Reemplazar prerequisitos de un curso", description = NOTA_DUENO_O_ADMIN)
     @PutMapping("/{id}/prerequisitos")
     public CursoResponse actualizarPrerequisitos(@PathVariable Long id,
                                                   @RequestBody ActualizarPrerequisitosRequest request) {
@@ -83,6 +92,7 @@ public class CursoController {
     }
 
     // HU-08: editar titulo, descripcion, nivel, habilidades, link
+    @Operation(summary = "Editar curso", description = NOTA_DUENO_O_ADMIN)
     @PutMapping("/{id}")
     public CursoResponse editar(@PathVariable Long id, @Valid @RequestBody EditarCursoRequest request) {
         Curso curso = cursoService.editar(id, request.titulo(), request.descripcion(), request.nivel(),
@@ -92,6 +102,7 @@ public class CursoController {
     }
 
     // HU-09: baja logica, no borra la fila
+    @Operation(summary = "Dar de baja un curso (baja lógica)", description = NOTA_DUENO_O_ADMIN)
     @PatchMapping("/{id}/baja")
     public ResponseEntity<Void> darDeBaja(@PathVariable Long id) {
         cursoService.darDeBaja(id, AuthenticatedUser.currentUserId(), AuthenticatedUser.isAdmin());

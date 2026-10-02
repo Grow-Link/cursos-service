@@ -3,6 +3,7 @@ package com.growlink.cursos.adapter.web;
 import com.growlink.cursos.adapter.web.dto.RoadmapGenerarRequest;
 import com.growlink.cursos.adapter.web.dto.RoadmapResponse;
 import com.growlink.cursos.application.RoadmapService;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/roadmap")
+@Tag(name = "Roadmap")
 public class RoadmapController {
 
     private final RoadmapService roadmapService;

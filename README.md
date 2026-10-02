@@ -38,6 +38,19 @@ Todo `/api/**` requiere autenticacion.
 - Ver cursos, el catalogo de habilidades y el catalogo general: cualquier
   usuario autenticado.
 
+## Documentación interactiva (Swagger UI)
+
+Con el servicio corriendo: **http://localhost:8086/swagger-ui.html**
+(`/v3/api-docs` para el JSON crudo de OpenAPI). Los endpoints están
+agrupados por `@Tag` en **Cursos**, **Habilidades** y **Roadmap**.
+
+Para probar los endpoints protegidos, usa el botón **Authorize** (arriba a
+la derecha) y pega un JWT válido (`Bearer <token>`, emitido por
+auth-service/usuarios-service, firmado con el mismo `GROWLINK_JWT_SECRET`).
+Los endpoints de crear/editar/dar de baja curso traen una nota en su
+descripción indicando que requieren ser el publicador dueño o tener rol
+`ADMIN`, para saber qué token usar al probarlos.
+
 ## Endpoints
 
 | Metodo | Ruta | Que hace |
