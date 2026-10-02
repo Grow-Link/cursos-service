@@ -262,10 +262,12 @@ class CursoFeaturesTest {
 
     @Test
     void sugerirPrerequisitosSinCandidatosActivosDevuelveListaVacia() throws Exception {
+        // categoria sin cursos, ni del catalogo sembrado por CursoCatalogoSeeder
+        // ni de otras pruebas de esta clase
         Map<String, Object> body = new HashMap<>();
-        body.put("categoria", "ADMINISTRACION_EMPRESAS");
+        body.put("categoria", "INGENIERIA_ELECTRONICA");
         body.put("nivel", "PRINCIPIANTE");
-        body.put("titulo", "Finanzas I");
+        body.put("titulo", "Circuitos I");
 
         mockMvc.perform(post("/api/cursos/sugerir-prerequisitos")
                         .header("Authorization", token(9007, "STUDENT"))
