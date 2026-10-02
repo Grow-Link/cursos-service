@@ -19,6 +19,35 @@ Variables de entorno requeridas:
 | `GROWLINK_JWT_SECRET` | Mismo secreto compartido con auth-service / usuarios-service, para validar el JWT |
 | `CLAUDE_API_KEY` | Opcional. Si no esta configurada, el roadmap se genera con el modo de respaldo (ver abajo) |
 
+`GROWLINK_JWT_SECRET` no tiene valor por defecto (a proposito, para no
+dejar un secreto hardcodeado en el repo): si no esta seteada en el entorno
+donde corres `mvn spring-boot:run`, el arranque falla con
+`Could not resolve placeholder 'GROWLINK_JWT_SECRET'`. Hay que setearla
+**antes** de correr el comando, en la misma terminal:
+
+```powershell
+# PowerShell
+$env:GROWLINK_JWT_SECRET = "el-mismo-secreto-que-usa-auth-service-o-usuarios-service"
+mvn spring-boot:run
+```
+
+```bash
+# bash / Git Bash
+GROWLINK_JWT_SECRET="el-mismo-secreto-que-usa-auth-service-o-usuarios-service" mvn spring-boot:run
+```
+
+Tiene que ser **el mismo valor** que usa `usuarios-service` (su
+`JWT_SECRET`) y `auth-service` para firmar los tokens: si no coincide,
+cursos-service arranca bien pero rechaza todos los tokens como invalidos
+(la peticion queda como anonima y responde 403, sin ningun error visible
+que lo delate). `$env:GROWLINK_JWT_SECRET` en PowerShell solo dura esa
+ventana; para dejarla permanente en la maquina:
+
+```powershell
+[System.Environment]::SetEnvironmentVariable("GROWLINK_JWT_SECRET", "el-secreto", "User")
+# requiere abrir una terminal nueva para que tome efecto
+```
+
 > Nota de esquema: el cambio de habilidades de texto libre a catalogo
 > cerrado modifica la forma de la tabla `curso_habilidad`. Como el proyecto
 > usa `ddl-auto: update` (sin Flyway/Liquibase), en una base de datos de
