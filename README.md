@@ -103,8 +103,8 @@ automaticamente (via `ObjectProvider`) y lo prefiere sobre el modo de
 respaldo, sin tocar codigo.
 
 `GET /api/roadmap/mio` devuelve los cursos del roadmap guardado con sus
-prerequisitos reales; armar el grafo visual (HU-12) es responsabilidad del
-frontend.
+prerequisitos reales; con eso el frontend arma el grafo visual (HU-12, ver
+"Roadmap como grafo" en el README de GrowLink-FRONTEND).
 
 `POST /api/cursos/sugerir-prerequisitos` (body: `categoria`, `nivel`,
 `titulo`, `descripcion?`) reutiliza esta misma infraestructura (mismo
@@ -136,9 +136,6 @@ prerequisitos).
   tema de pago que el equipo no ha resuelto. Mientras tanto el roadmap se
   genera con el modo de respaldo (ordenacion topologica), que es
   completamente funcional y demostrable.
-- HU-12 (visualizar el roadmap como grafo) es responsabilidad del
-  frontend; el backend ya expone los cursos con sus relaciones de
-  prerequisito para armarlo.
 - No hay Flyway/Liquibase: el esquema se maneja con `ddl-auto: update`,
   igual que antes de este cambio. Ver la nota de esquema arriba sobre
   `curso_habilidad`.
