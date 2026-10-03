@@ -171,13 +171,29 @@ incluyendo que el historial sobrevive a la baja del curso) y HU-11/12
 (roadmap en modo de respaldo, validando que respeta el orden real de
 prerequisitos).
 
+## Despliegue
+
+Se despliega en Azure App Service, el flujo de ramas y ambientes esta
+explicado en el README del repo `infra`. `ci.yml` corre las pruebas en cada
+push a `main`, `avance` o `final`, y `cd.yml` despliega la rama a su ambiente
+de GitHub (`main` -> `actual`, `avance` -> `avance`, `final` -> `final`).
+Tambien hay un `Dockerfile`.
+
+| Variable | Para que sirve |
+|---|---|
+| `PORT` | Puerto, Azure lo pone solo |
+| `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD` | La base Postgres |
+| `GROWLINK_JWT_SECRET` | Obligatoria, el mismo secreto que usa usuarios-service |
+| `CLAUDE_API_KEY` | La llave de la API de Claude, con ella el roadmap se genera con IA real |
+| `ROADMAP_AI_MODEL` | Opcional, el modelo de Claude a usar (por defecto `claude-sonnet-5-5`) |
+
 ## Pendiente
 
 - La integracion real con la API de Claude (`ClaudeRoadmapAiClient`) esta
-  construida pero sin probar contra la API real: sigue bloqueada por el
-  tema de pago que el equipo no ha resuelto. Mientras tanto el roadmap se
-  genera con el modo de respaldo (ordenacion topologica), que es
-  completamente funcional y demostrable.
+  construida pero sin probar contra la API real. El grupo ya acordo pagar
+  la API, asi que solo falta poner `CLAUDE_API_KEY` en el ambiente y
+  probarla. Mientras no haya llave, el roadmap se genera con el modo de
+  respaldo (ordenacion topologica), que es completamente funcional.
 - No hay Flyway/Liquibase: el esquema se maneja con `ddl-auto: update`,
   igual que antes de este cambio. Ver la nota de esquema arriba sobre
   `curso_habilidad`.

@@ -1,0 +1,41 @@
+name: CD
+
+# despliega a Azure App Service cada vez que se sube algo a main, avance o final
+# cada rama va a su propio ambiente de GitHub (Settings > Environments):
+#   main   -> actual   (lo que tenemos ahora)
+#   avance -> avance   (el avance intermedio)
+#   final  -> final    (la entrega final)
+# cada ambiente guarda su propia app de Azure, asi se pueden tener las tres
+# versiones desplegadas al mismo tiempo, o desplegar solo la que toque
+on:
+  push:
+    branches: [main, avance, final]
+  workflow_dispatch:
+
+jobs:
+  desplegar:
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'main' && 'actual' || github.ref_name }}
+    steps:
+      - name: Bajar el codigo
+        uses: actions/checkout@v4
+
+      - name: Instalar Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      # no se despliega nada que no pase las pruebas
+      - name: Compilar y correr pruebas
+        run: mvn -B verify
+
+      # AZURE_WEBAPP_NAME es una variable del ambiente
+      # AZURE_WEBAPP_PUBLISH_PROFILE es un secreto del ambiente (se baja del portal de Azure)
+      - name: Subir a Azure App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: target/*.jar
