@@ -179,9 +179,17 @@ push a `main`, `avance` o `final`, y `cd.yml` despliega la rama a su ambiente
 de GitHub (`main` -> `actual`, `avance` -> `avance`, `final` -> `final`).
 Tambien hay un `Dockerfile`.
 
+El servicio no guarda nada en memoria (la sesion es un JWT, lo demas esta en la
+base), asi que se puede correr con varias instancias detras de un balanceador.
+Cada respuesta trae el header `X-Instancia` con la instancia que la atendio. Una
+cosa: el catalogo de cursos y de habilidades de prueba se crea al arrancar si la
+base esta vacia, por eso la primera vez hay que dejar una sola instancia hasta
+que arranque (si no, se duplican). El script `levantar.sh` del repo `infra` ya
+lo hace asi.
+
 | Variable | Para que sirve |
 |---|---|
-| `PORT` | Puerto, Azure lo pone solo |
+| `PORT` y `WEBSITES_PORT` | Poner las dos con `8086` |
 | `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD` | La base Postgres |
 | `GROWLINK_JWT_SECRET` | Obligatoria, el mismo secreto que usa usuarios-service |
 | `CLAUDE_API_KEY` | La llave de la API de Claude, con ella el roadmap se genera con IA real |
