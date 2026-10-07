@@ -7,15 +7,17 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-// Integracion real con la API de Claude. Sigue bloqueada por el tema de pago
-// que el equipo no ha resuelto (ver README), asi que este bean solo se activa
-// si CLAUDE_API_KEY esta configurada. Mientras tanto, RoadmapService usa
+// Integracion real con la API de Claude. Este bean solo se activa si
+// CLAUDE_API_KEY esta configurada, si no, RoadmapService usa
 // FallbackTopologicoRoadmapAiClient. Conectar la IA real es, literalmente,
 // poner la variable de entorno: Spring detecta este bean solo (ver
 // @ConditionalOnExpression) y RoadmapService lo prefiere automaticamente.
@@ -38,7 +40,11 @@ public class ClaudeRoadmapAiClient implements RoadmapAiClient {
         this.apiKey = apiKey;
         this.model = model;
         this.objectMapper = objectMapper;
-        this.restClient = RestClient.create();
+        // sin tiempos limite, si Claude se queda pensando la peticion del usuario se quedaria colgada
+        var requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(Duration.ofSeconds(5));
+        requestFactory.setReadTimeout(Duration.ofSeconds(90));
+        this.restClient = RestClient.builder().requestFactory(requestFactory).build();
     }
 
     @Override
@@ -103,9 +109,11 @@ public class ClaudeRoadmapAiClient implements RoadmapAiClient {
 
     private String llamarClaude(String prompt, String mensajeErrorHttp) {
         try {
+            // los modelos nuevos piensan antes de responder y ese pensamiento cuenta dentro de
+            // max_tokens, con un limite chico se quedaban sin espacio para la respuesta
             Map<String, Object> body = Map.of(
                     "model", model,
-                    "max_tokens", 1024,
+                    "max_tokens", 8000,
                     "messages", List.of(Map.of("role", "user", "content", prompt))
             );
 
@@ -124,14 +132,22 @@ public class ClaudeRoadmapAiClient implements RoadmapAiClient {
         }
     }
 
-    private List<Long> extraerListaIds(String respuestaCruda) {
+    List<Long> extraerListaIds(String respuestaCruda) {
         try {
             JsonNode raiz = objectMapper.readTree(respuestaCruda);
             JsonNode contenido = raiz.path("content");
             if (!contenido.isArray() || contenido.isEmpty()) {
                 throw new RoadmapAiException("Respuesta de Claude sin contenido de texto");
             }
-            String texto = contenido.get(0).path("text").asText("");
+            // la respuesta puede traer bloques de "thinking" antes del texto, el primer bloque
+            // no es necesariamente el que tiene la respuesta, hay que juntar solo los de tipo text
+            StringBuilder textoCompleto = new StringBuilder();
+            for (JsonNode bloque : contenido) {
+                if ("text".equals(bloque.path("type").asText())) {
+                    textoCompleto.append(bloque.path("text").asText(""));
+                }
+            }
+            String texto = textoCompleto.toString();
             Matcher matcher = JSON_ARRAY.matcher(texto);
             if (!matcher.find()) {
                 throw new RoadmapAiException("La respuesta de Claude no trae un arreglo JSON de cursoId");
