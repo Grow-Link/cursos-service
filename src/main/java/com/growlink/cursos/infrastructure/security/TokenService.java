@@ -8,7 +8,10 @@ import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 // cursos-service no reimplementa autenticacion: solo valida la firma del JWT
 // emitido por auth-service con el mismo secreto compartido (GROWLINK_JWT_SECRET)
@@ -32,10 +35,20 @@ public class TokenService {
 
         Long userId = Long.valueOf(claims.getSubject());
 
-        @SuppressWarnings("unchecked")
-        List<String> roles = claims.get("roles", List.class);
+        // usuarios-service firma el rol en un solo claim de texto ("rol": "ADMIN"),
+        // pero este servicio nacio esperando una lista ("roles": [...]). Se aceptan las dos,
+        // si no, un ADMIN de verdad nunca contaba como admin aqui
+        Set<String> roles = new LinkedHashSet<>();
+        Object lista = claims.get("roles");
+        if (lista instanceof Collection<?> coleccion) {
+            coleccion.forEach(rol -> roles.add(String.valueOf(rol)));
+        }
+        String rol = claims.get("rol", String.class);
+        if (rol != null) {
+            roles.add(rol);
+        }
 
-        return new ClaimsJwt(userId, roles == null ? List.of() : roles);
+        return new ClaimsJwt(userId, List.copyOf(roles));
     }
 
     public record ClaimsJwt(Long userId, List<String> roles) {
