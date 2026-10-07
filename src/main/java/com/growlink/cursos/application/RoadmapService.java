@@ -46,9 +46,10 @@ public class RoadmapService {
         List<CursoGrafoNodo> catalogoActivo = catalogoActivoComoGrafo();
         ContextoRoadmap contexto = new ContextoRoadmap(usuarioId, metas, intereses, nivel);
 
-        List<Long> orden = generarOrdenValidado(catalogoActivo, contexto);
+        OrdenGenerado generado = generarOrdenValidado(catalogoActivo, contexto);
+        List<Long> orden = generado.orden();
 
-        Roadmap roadmap = roadmapRepository.save(new Roadmap(usuarioId, metas, nivel));
+        Roadmap roadmap = roadmapRepository.save(new Roadmap(usuarioId, metas, nivel, generado.fuente()));
         Map<Long, Curso> cursosPorId = cursoRepository.findAllById(orden).stream()
                 .collect(Collectors.toMap(Curso::getId, c -> c));
 
@@ -76,21 +77,26 @@ public class RoadmapService {
         return new RoadmapDetalle(roadmap, detalle);
     }
 
-    private List<Long> generarOrdenValidado(List<CursoGrafoNodo> catalogoActivo, ContextoRoadmap contexto) {
+    private record OrdenGenerado(List<Long> orden, FuenteRoadmap fuente) {
+    }
+
+    private OrdenGenerado generarOrdenValidado(List<CursoGrafoNodo> catalogoActivo, ContextoRoadmap contexto) {
+        // sin llave de Claude, aiClient ya es el respaldo: eso nunca se cuenta como IA
+        boolean hayIa = aiClient != fallbackClient;
         List<Long> orden;
         try {
             orden = aiClient.generarOrden(catalogoActivo, contexto);
         } catch (RoadmapAiException e) {
             log.warn("Fallo la IA generando el roadmap, se usa el modo de respaldo: {}", e.getMessage());
-            return fallbackClient.generarOrden(catalogoActivo, contexto);
+            return new OrdenGenerado(fallbackClient.generarOrden(catalogoActivo, contexto), FuenteRoadmap.RESPALDO);
         }
 
         if (esSubconjuntoValido(orden, catalogoActivo)) {
-            return orden;
+            return new OrdenGenerado(orden, hayIa ? FuenteRoadmap.IA : FuenteRoadmap.RESPALDO);
         }
         log.warn("La respuesta de la IA no es un subconjunto valido del catalogo/prerequisitos reales, "
                 + "se usa el modo de respaldo");
-        return fallbackClient.generarOrden(catalogoActivo, contexto);
+        return new OrdenGenerado(fallbackClient.generarOrden(catalogoActivo, contexto), FuenteRoadmap.RESPALDO);
     }
 
     // nunca se guarda un roadmap con cursos o relaciones inventadas: todo id

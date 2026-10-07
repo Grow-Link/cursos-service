@@ -112,6 +112,7 @@ public class CursoController {
     // HU-14: marcar un curso como completado
     @PostMapping("/{id}/completar")
     public ResponseEntity<Void> completar(@PathVariable Long id, @Valid @RequestBody CompletarCursoRequest request) {
+        AuthenticatedUser.exigirPropio(request.usuarioId());
         cursoService.completar(id, request.usuarioId());
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
@@ -119,6 +120,7 @@ public class CursoController {
     // HU-15: historial de completados de un usuario, incluye cursos ya inactivos
     @GetMapping("/completados")
     public List<CompletadoResponse> completados(@RequestParam Long usuarioId) {
+        AuthenticatedUser.exigirPropio(usuarioId);
         return cursoService.completados(usuarioId).stream().map(CompletadoResponse::from).toList();
     }
 

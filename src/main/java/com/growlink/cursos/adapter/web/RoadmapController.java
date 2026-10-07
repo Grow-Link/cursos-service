@@ -3,6 +3,7 @@ package com.growlink.cursos.adapter.web;
 import com.growlink.cursos.adapter.web.dto.RoadmapGenerarRequest;
 import com.growlink.cursos.adapter.web.dto.RoadmapResponse;
 import com.growlink.cursos.application.RoadmapService;
+import com.growlink.cursos.infrastructure.security.AuthenticatedUser;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -23,6 +24,7 @@ public class RoadmapController {
     // HU-11: cualquier usuario autenticado puede generar su propio roadmap
     @PostMapping("/generar")
     public ResponseEntity<RoadmapResponse> generar(@Valid @RequestBody RoadmapGenerarRequest request) {
+        AuthenticatedUser.exigirPropio(request.usuarioId());
         var detalle = roadmapService.generar(request.usuarioId(), request.metas(), request.intereses(),
                 request.nivel());
         return ResponseEntity.status(HttpStatus.CREATED).body(RoadmapResponse.from(detalle));
@@ -31,6 +33,7 @@ public class RoadmapController {
     // Lo usa el Home (HU-05) para saber si el usuario ya tiene roadmap generado
     @GetMapping("/mio")
     public RoadmapResponse mio(@RequestParam Long usuarioId) {
+        AuthenticatedUser.exigirPropio(usuarioId);
         return RoadmapResponse.from(roadmapService.mio(usuarioId));
     }
 }

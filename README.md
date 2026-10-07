@@ -131,18 +131,44 @@ respuesta no cumple eso (o la llamada falla), se usa el modo de respaldo.
 
 - `ClaudeRoadmapAiClient`: integracion real con la API de Claude (Messages
   API). Solo se activa si `CLAUDE_API_KEY` esta configurada
-  (`@ConditionalOnExpression`). **Sigue bloqueada por el tema de pago que el
-  equipo no ha resuelto** — no se ha podido probar contra la API real.
+  (`@ConditionalOnExpression`). **No se ha probado contra la API real**: falta la
+  llave. Si la respuesta trae un bloque de "thinking" antes del texto se lee
+  igual (solo se juntan los bloques de tipo `text`), y eso esta cubierto por
+  pruebas con respuestas con la forma real de la API.
 - `FallbackTopologicoRoadmapAiClient`: modo de respaldo, siempre disponible.
   Arma el subgrafo de cursos cuya categoria esta en los intereses del
   usuario y cuyo nivel no supera el pedido, y lo ordena con Kahn
   (ordenacion topologica) usando los prerequisitos reales entre esos
   cursos. Es el que esta activo mientras no haya API key.
 
-Conectar la IA real cuando se resuelva el pago es, literalmente, configurar
-`CLAUDE_API_KEY`: `RoadmapService` detecta el bean de `ClaudeRoadmapAiClient`
-automaticamente (via `ObjectProvider`) y lo prefiere sobre el modo de
-respaldo, sin tocar codigo.
+Conectar la IA real es, literalmente, configurar `CLAUDE_API_KEY`:
+`RoadmapService` detecta el bean de `ClaudeRoadmapAiClient` automaticamente
+(via `ObjectProvider`) y lo prefiere sobre el modo de respaldo, sin tocar codigo.
+
+**Que no se recomiende un curso dado de baja.** Se cumple en capas, y no depende
+de lo que conteste la IA:
+
+1. La IA solo recibe el catalogo de cursos **activos**, nunca ve uno dado de baja.
+2. Aunque aun asi recomendara uno dado de baja (o uno inventado), la respuesta se
+   rechaza y se usa el respaldo, que tambien trabaja solo con cursos activos.
+3. Un roadmap que ya estaba guardado no se reescribe solo: `GET
+   /api/cursos/estado-roadmap` marca los cursos que dejaron de estar activos
+   (`requiereRegenerar`) para que el usuario lo regenere.
+
+Esto esta probado en `RoadmapRestriccionTest` con una IA simulada que recomienda
+cursos dados de baja, cursos inventados, o falla.
+
+**Quien lo genero.** El roadmap guarda `generadoPor`: `IA` solo si Claude contesto
+y la respuesta paso la validacion, y `RESPALDO` en cualquier otro caso (sin llave,
+falla, o respuesta invalida). El frontend lo muestra para no decir "generado por
+IA" cuando fue el respaldo. Ojo: el respaldo **no usa las metas** del usuario,
+solo sus intereses y su nivel, las metas solo las lee la IA.
+
+**Solo con tu propio usuario.** `POST /api/roadmap/generar`, `GET
+/api/roadmap/mio`, `POST /api/cursos/{id}/completar` y `GET
+/api/cursos/completados` reciben un `usuarioId`, pero ese dato lo escribe el
+cliente, asi que se compara con el del token y si no coincide responde 403. Un
+ADMIN si puede actuar por otros.
 
 `GET /api/roadmap/mio` devuelve los cursos del roadmap guardado con sus
 prerequisitos reales; con eso el frontend arma el grafo visual (HU-12, ver

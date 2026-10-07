@@ -29,15 +29,24 @@ public class Roadmap {
     @Column(nullable = false)
     private Instant creadoEn;
 
+    // puede ser null en roadmaps viejos, de antes de que se guardara este dato
+    @Enumerated(EnumType.STRING)
+    private FuenteRoadmap generadoPor;
+
     protected Roadmap() {
         // JPA
     }
 
-    public Roadmap(Long usuarioId, String metas, Nivel nivel) {
+    public Roadmap(Long usuarioId, String metas, Nivel nivel, FuenteRoadmap generadoPor) {
         this.usuarioId = usuarioId;
         this.metas = metas;
         this.nivel = nivel;
         this.creadoEn = Instant.now();
+        this.generadoPor = generadoPor;
+    }
+
+    public FuenteRoadmap getGeneradoPor() {
+        return generadoPor;
     }
 
     public Long getId() {
