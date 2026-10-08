@@ -39,6 +39,12 @@ public class RoadmapService {
         // si no, cae automaticamente al modo de respaldo
         ClaudeRoadmapAiClient claudeClient = claudeClientProvider.getIfAvailable();
         this.aiClient = claudeClient != null ? claudeClient : fallbackClient;
+        // para no tener que adivinar: al arrancar queda escrito cual de los dos se esta usando
+        if (claudeClient != null) {
+            log.info("Roadmap: IA ACTIVADA, se usa Claude (se encontro CLAUDE_API_KEY)");
+        } else {
+            log.warn("Roadmap: SIN IA, no hay CLAUDE_API_KEY y se usa el modo de respaldo");
+        }
     }
 
     @Transactional

@@ -128,7 +128,9 @@ public class ClaudeRoadmapAiClient implements RoadmapAiClient {
         } catch (RoadmapAiException e) {
             throw e;
         } catch (Exception e) {
-            throw new RoadmapAiException(mensajeErrorHttp, e);
+            // el mensaje de la excepcion trae el estado HTTP y lo que contesto la API (por ejemplo
+            // "credit balance too low" o "invalid x-api-key"), asi el log dice por que cayo al respaldo
+            throw new RoadmapAiException(mensajeErrorHttp + ": " + e.getMessage(), e);
         }
     }
 
