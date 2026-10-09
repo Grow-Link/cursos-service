@@ -75,6 +75,7 @@ class CursoFeaturesTest {
         body.put("habilidadIds", List.of(habilidadDeSistemas));
         body.put("publicadorUsuarioId", 2000L);
         body.put("prerequisitoIds", List.of());
+        body.put("duracionHoras", 20);
 
         mockMvc.perform(post("/api/cursos")
                         .header("Authorization", token(2000, "PROFESSOR"))
@@ -82,6 +83,25 @@ class CursoFeaturesTest {
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value(containsString("categoria")));
+    }
+
+    // bono (PDF del roadmap): duracionHoras es obligatoria al crear
+    @Test
+    void crearCursoSinDuracionHorasResponde400() throws Exception {
+        Map<String, Object> body = new HashMap<>();
+        body.put("titulo", "Curso sin duracion");
+        body.put("categoria", "INGENIERIA_SISTEMAS");
+        body.put("nivel", "PRINCIPIANTE");
+        body.put("habilidadIds", List.of());
+        body.put("publicadorUsuarioId", 2009L);
+        body.put("prerequisitoIds", List.of());
+        // sin duracionHoras a proposito
+
+        mockMvc.perform(post("/api/cursos")
+                        .header("Authorization", token(2009, "PROFESSOR"))
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -95,6 +115,7 @@ class CursoFeaturesTest {
         edicion.put("nivel", "INTERMEDIO");
         edicion.put("habilidadIds", List.of(habilidadId));
         edicion.put("linkContenido", "http://ejemplo.com");
+        edicion.put("duracionHoras", 30);
 
         // otro usuario, no dueño ni admin: rechazado
         mockMvc.perform(put("/api/cursos/" + cursoId)
@@ -254,6 +275,54 @@ class CursoFeaturesTest {
                 .andExpect(jsonPath("$.cursos[?(@.cursoId == " + avanzado + ")]").exists());
     }
 
+    // bono (PDF del roadmap): /api/roadmap/mio trae descripcion, duracionHoras
+    // y habilidades por curso, para que el frontend no pida cada curso aparte
+    @Test
+    void roadmapMioIncluyeDescripcionDuracionYHabilidadesPorCurso() throws Exception {
+        Long habilidadId = habilidadIdPorNombre("IDIOMAS", "Inglés", 9008);
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("titulo", "Ingles Conversacional");
+        body.put("descripcion", "Practica de conversacion en ingles para nivel principiante.");
+        body.put("categoria", "IDIOMAS");
+        body.put("nivel", "PRINCIPIANTE");
+        body.put("habilidadIds", List.of(habilidadId));
+        body.put("publicadorUsuarioId", 2008L);
+        body.put("prerequisitoIds", List.of());
+        body.put("duracionHoras", 18);
+
+        String creado = mockMvc.perform(post("/api/cursos")
+                        .header("Authorization", token(2008, "PROFESSOR"))
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        Long cursoId = ((Number) objectMapper.readValue(creado, Map.class).get("id")).longValue();
+
+        long usuarioId = 4100L;
+        Map<String, Object> generar = new HashMap<>();
+        generar.put("usuarioId", usuarioId);
+        generar.put("metas", "Quiero mejorar mi ingles");
+        generar.put("intereses", List.of("IDIOMAS"));
+        generar.put("nivel", "PRINCIPIANTE");
+
+        mockMvc.perform(post("/api/roadmap/generar")
+                        .header("Authorization", token(usuarioId, "STUDENT"))
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(generar)))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/api/roadmap/mio").param("usuarioId", String.valueOf(usuarioId))
+                        .header("Authorization", token(usuarioId, "STUDENT")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.cursos[?(@.cursoId == " + cursoId + ")].descripcion")
+                        .value(hasItem("Practica de conversacion en ingles para nivel principiante.")))
+                .andExpect(jsonPath("$.cursos[?(@.cursoId == " + cursoId + ")].duracionHoras")
+                        .value(hasItem(18)))
+                .andExpect(jsonPath("$.cursos[?(@.cursoId == " + cursoId + ")].habilidades")
+                        .value(hasItem(hasItem("Inglés"))));
+    }
+
     @Test
     void sugerirPrerequisitosUsaModoDeRespaldoYSugiereLosDeMenorNivel() throws Exception {
         Long basico = crearCurso("Derecho Civil I", "DERECHO", "PRINCIPIANTE", List.of(), 2007L);
@@ -373,6 +442,7 @@ class CursoFeaturesTest {
         body.put("habilidadIds", habilidadIds);
         body.put("publicadorUsuarioId", publicadorUsuarioId);
         body.put("prerequisitoIds", List.of());
+        body.put("duracionHoras", 20);
 
         String response = mockMvc.perform(post("/api/cursos")
                         .header("Authorization", token(publicadorUsuarioId, "PROFESSOR"))

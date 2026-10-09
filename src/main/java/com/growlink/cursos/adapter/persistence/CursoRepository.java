@@ -8,10 +8,14 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface CursoRepository extends JpaRepository<Curso, Long> {
 
     List<Curso> findByPublicadorUsuarioId(Long publicadorUsuarioId);
+
+    // CursoCatalogoSeeder: backfill de datos del catalogo, matchea por titulo
+    Optional<Curso> findByTitulo(String titulo);
 
     // HU-13: catalogo general, siempre solo activos, con filtros opcionales
     @Query("SELECT c FROM Curso c WHERE c.activo = true "
