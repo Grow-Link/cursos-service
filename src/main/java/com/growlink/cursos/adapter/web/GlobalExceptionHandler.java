@@ -1,8 +1,12 @@
 package com.growlink.cursos.adapter.web;
 
 import com.growlink.cursos.application.CicloDePrerequisitosException;
+import com.growlink.cursos.application.CursoNoDisponibleException;
 import com.growlink.cursos.application.CursoNoEncontradoException;
 import com.growlink.cursos.application.CursoYaCompletadoException;
+import com.growlink.cursos.application.ExamenInvalidoException;
+import com.growlink.cursos.application.MetaInvalidaException;
+import com.growlink.cursos.application.MetaNoViableException;
 import com.growlink.cursos.application.HabilidadCategoriaInvalidaException;
 import com.growlink.cursos.application.HabilidadNoEncontradaException;
 import com.growlink.cursos.application.NoAutorizadoException;
@@ -54,6 +58,23 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(RoadmapNoEncontradoException.class)
     public ResponseEntity<ErrorBody> handleRoadmapNoEncontrado(RoadmapNoEncontradoException e) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ErrorBody(e.getMessage()));
+    }
+
+    // la meta no parece una frase, o el examen / las respuestas no cumplen las reglas
+    @ExceptionHandler({MetaInvalidaException.class, ExamenInvalidoException.class})
+    public ResponseEntity<ErrorBody> handleEntradaInvalida(RuntimeException e) {
+        return ResponseEntity.badRequest().body(new ErrorBody(e.getMessage()));
+    }
+
+    // la meta se entiende pero no se puede cumplir con los cursos que hay: se explica, no se inventa una ruta
+    @ExceptionHandler(MetaNoViableException.class)
+    public ResponseEntity<ErrorBody> handleMetaNoViable(MetaNoViableException e) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(new ErrorBody(e.getMessage()));
+    }
+
+    @ExceptionHandler(CursoNoDisponibleException.class)
+    public ResponseEntity<ErrorBody> handleCursoNoDisponible(CursoNoDisponibleException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new ErrorBody(e.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

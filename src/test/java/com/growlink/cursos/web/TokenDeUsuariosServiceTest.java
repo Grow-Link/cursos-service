@@ -22,7 +22,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 // los otros tests firman el rol como lista ("roles"), pero asi NO lo firma usuarios-service:
 // usuarios-service manda un solo claim de texto, "rol". Esta prueba usa el token con la forma
 // real, y es la que habria atrapado que un ADMIN no contaba como admin en cursos-service
-@SpringBootTest
+@SpringBootTest(properties = "CLAUDE_API_KEY=")
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class TokenDeUsuariosServiceTest {

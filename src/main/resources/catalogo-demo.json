@@ -1,0 +1,392 @@
+{
+  "cursos": [
+    {
+      "clave": "fund_prog", "titulo": "Fundamentos de Programación", "area": "INGENIERIA_SISTEMAS", "nivel": "PRINCIPIANTE",
+      "horas": 24, "publicador": 9, "prerequisitos": [], "habilidades": ["Programación"],
+      "descripcion": "Aprende a pensar como programador: variables, decisiones, ciclos y funciones, resolviendo problemas pequeños paso a paso.",
+      "temario": ["Qué es un algoritmo y cómo se escribe", "Variables, tipos de datos y operadores", "Decisiones con condicionales", "Repetición con ciclos", "Funciones y organización del código", "Depurar errores comunes"],
+      "link": "https://www.freecodecamp.org/espanol/",
+      "examen": [
+        {"p": "¿Qué es un algoritmo?", "o": ["Un lenguaje de programación", "Una secuencia ordenada de pasos para resolver un problema", "Un tipo de variable", "Un programa que ya está compilado"], "c": 1},
+        {"p": "¿Para qué sirve un ciclo (bucle)?", "o": ["Para guardar datos en disco", "Para repetir instrucciones mientras se cumpla una condición", "Para declarar variables", "Para traducir el código"], "c": 1},
+        {"p": "Una función en programación sirve principalmente para:", "o": ["Agrupar instrucciones reutilizables bajo un nombre", "Borrar variables", "Cambiar el sistema operativo", "Dibujar la interfaz"], "c": 0}
+      ]
+    },
+    {
+      "clave": "python1", "titulo": "Python desde Cero", "area": "INGENIERIA_SISTEMAS", "nivel": "PRINCIPIANTE",
+      "horas": 30, "publicador": 2, "prerequisitos": [], "habilidades": ["Python", "Programación"],
+      "descripcion": "Tu primer lenguaje: Python explicado con ejemplos cortos. Escribirás scripts útiles y terminarás con un pequeño proyecto propio.",
+      "temario": ["Instalación y primer programa en Python", "Tipos de datos: números, texto, listas y diccionarios", "Condicionales y ciclos", "Funciones y módulos", "Leer y escribir archivos", "Mini proyecto: un programa de consola"],
+      "link": "https://docs.python.org/es/3/tutorial/",
+      "examen": [
+        {"p": "¿Cuál estructura de Python guarda pares clave-valor?", "o": ["Lista", "Tupla", "Diccionario", "Conjunto de números"], "c": 2},
+        {"p": "¿Qué palabra clave se usa para definir una función en Python?", "o": ["func", "def", "function", "define"], "c": 1},
+        {"p": "¿Qué imprime print(len([4, 8, 15]))?", "o": ["2", "3", "15", "Da error"], "c": 1}
+      ]
+    },
+    {
+      "clave": "bd_rel", "titulo": "Bases de Datos Relacionales", "area": "INGENIERIA_SISTEMAS", "nivel": "PRINCIPIANTE",
+      "horas": 28, "publicador": 11, "prerequisitos": [], "habilidades": ["Bases de Datos"],
+      "descripcion": "Diseña y consulta bases de datos con SQL: tablas, relaciones y las consultas que se usan a diario en cualquier empresa.",
+      "temario": ["Qué es una base de datos relacional", "Modelo entidad-relación", "Crear tablas y llaves primarias y foráneas", "Consultas con SELECT, WHERE y ORDER BY", "Unir tablas con JOIN", "Insertar, actualizar y borrar datos"],
+      "link": "https://www.postgresql.org/docs/current/tutorial.html",
+      "examen": [
+        {"p": "¿Qué identifica de forma única cada fila de una tabla?", "o": ["La llave foránea", "La llave primaria", "El índice de texto", "El nombre de la tabla"], "c": 1},
+        {"p": "¿Qué comando SQL se usa para leer datos?", "o": ["INSERT", "UPDATE", "SELECT", "DROP"], "c": 2},
+        {"p": "Un JOIN sirve para:", "o": ["Borrar tablas duplicadas", "Combinar filas de dos o más tablas relacionadas", "Cifrar la base de datos", "Crear copias de seguridad"], "c": 1}
+      ]
+    },
+    {
+      "clave": "redes", "titulo": "Redes de Computadores", "area": "INGENIERIA_SISTEMAS", "nivel": "PRINCIPIANTE",
+      "horas": 26, "publicador": 11, "prerequisitos": [], "habilidades": ["Redes"],
+      "descripcion": "Entiende cómo viaja la información por internet: direcciones IP, protocolos y cómo se conectan los equipos de una red.",
+      "temario": ["Modelo de capas y protocolos", "Direcciones IP y subredes", "DNS y cómo se encuentra un sitio web", "HTTP y HTTPS", "Dispositivos de red: switch y router", "Diagnóstico básico de conexiones"],
+      "link": "https://www.netacad.com/es",
+      "examen": [
+        {"p": "¿Para qué sirve el DNS?", "o": ["Cifrar mensajes", "Traducir nombres de dominio a direcciones IP", "Aumentar la velocidad del Wi-Fi", "Guardar contraseñas"], "c": 1},
+        {"p": "¿Qué diferencia a HTTPS de HTTP?", "o": ["Es más lento por diseño", "Cifra la comunicación entre el navegador y el servidor", "Solo funciona en móviles", "No usa direcciones IP"], "c": 1},
+        {"p": "¿Qué dispositivo conecta redes distintas entre sí?", "o": ["Switch", "Router", "Cable HDMI", "Monitor"], "c": 1}
+      ]
+    },
+    {
+      "clave": "poo", "titulo": "Programación Orientada a Objetos", "area": "INGENIERIA_SISTEMAS", "nivel": "PRINCIPIANTE",
+      "horas": 32, "publicador": 2, "prerequisitos": ["fund_prog"], "habilidades": ["Programación", "Ingeniería de Software"],
+      "descripcion": "Organiza programas grandes con clases y objetos: encapsulamiento, herencia y polimorfismo aplicados a casos reales.",
+      "temario": ["Clases y objetos", "Atributos, métodos y constructores", "Encapsulamiento", "Herencia y polimorfismo", "Interfaces y clases abstractas", "Diseño de un pequeño sistema de objetos"],
+      "link": "https://docs.oracle.com/javase/tutorial/java/concepts/",
+      "examen": [
+        {"p": "¿Qué es el encapsulamiento?", "o": ["Ocultar los detalles internos de un objeto y exponer solo lo necesario", "Copiar un objeto", "Convertir un objeto a texto", "Repetir código en varias clases"], "c": 0},
+        {"p": "La herencia permite:", "o": ["Que una clase reutilice y extienda el comportamiento de otra", "Borrar objetos automáticamente", "Conectarse a una base de datos", "Compilar más rápido"], "c": 0},
+        {"p": "El polimorfismo consiste en:", "o": ["Tener muchas variables", "Que un mismo método se comporte distinto según el objeto que lo ejecute", "Usar varios lenguajes", "Dividir un programa en archivos"], "c": 1}
+      ]
+    },
+    {
+      "clave": "python2", "titulo": "Python Intermedio: Datos y Automatización", "area": "INGENIERIA_SISTEMAS", "nivel": "INTERMEDIO",
+      "horas": 36, "publicador": 2, "prerequisitos": ["python1"], "habilidades": ["Python", "Análisis de Datos"],
+      "descripcion": "Lleva Python al siguiente nivel: manejo de archivos y datos, librerías clave y automatización de tareas repetitivas.",
+      "temario": ["Comprensiones de listas y generadores", "Módulos, paquetes y entornos virtuales", "Archivos CSV y JSON", "Manejo de errores y excepciones", "Consumir APIs web", "Automatizar una tarea real con scripts"],
+      "link": "https://docs.python.org/es/3/library/",
+      "examen": [
+        {"p": "¿Para qué sirve un entorno virtual en Python?", "o": ["Para ejecutar Python más rápido", "Para aislar las dependencias de cada proyecto", "Para cifrar el código", "Para compilar a C"], "c": 1},
+        {"p": "¿Qué bloque se usa para capturar errores?", "o": ["try / except", "if / else", "for / while", "import / from"], "c": 0},
+        {"p": "¿Qué formato de texto se usa comúnmente para intercambiar datos con APIs?", "o": ["JSON", "MP3", "PNG", "EXE"], "c": 0}
+      ]
+    },
+    {
+      "clave": "est_datos", "titulo": "Estructuras de Datos y Algoritmos", "area": "INGENIERIA_SISTEMAS", "nivel": "INTERMEDIO",
+      "horas": 40, "publicador": 2, "prerequisitos": ["poo", "mat_disc"], "habilidades": ["Estructuras de Datos", "Programación"],
+      "descripcion": "Elige la estructura correcta para cada problema y mide la eficiencia de tus soluciones: listas, pilas, colas, árboles, grafos y ordenamiento.",
+      "temario": ["Complejidad algorítmica (notación O)", "Listas, pilas y colas", "Tablas hash", "Árboles y árboles de búsqueda", "Grafos y recorridos", "Algoritmos de ordenamiento y búsqueda"],
+      "link": "https://visualgo.net/es",
+      "examen": [
+        {"p": "¿Qué estructura sigue el principio último en entrar, primero en salir (LIFO)?", "o": ["Cola", "Pila", "Árbol", "Grafo"], "c": 1},
+        {"p": "¿Qué complejidad tiene en promedio buscar en una tabla hash?", "o": ["O(n)", "O(n²)", "O(1)", "O(log n!)"], "c": 2},
+        {"p": "Un recorrido en anchura (BFS) de un grafo usa normalmente:", "o": ["Una pila", "Una cola", "Un arreglo ordenado", "Una tabla de símbolos"], "c": 1}
+      ]
+    },
+    {
+      "clave": "web_back", "titulo": "Desarrollo Web Backend", "area": "INGENIERIA_SISTEMAS", "nivel": "INTERMEDIO",
+      "horas": 44, "publicador": 9, "prerequisitos": ["poo", "bd_rel"], "habilidades": ["Desarrollo Web", "Bases de Datos", "Programación"],
+      "descripcion": "Construye el servidor de una aplicación: APIs REST, acceso a bases de datos, autenticación y buenas prácticas de seguridad.",
+      "temario": ["Cómo funciona una aplicación web", "APIs REST y códigos de respuesta HTTP", "Conexión a una base de datos", "Autenticación con tokens", "Validación de datos y manejo de errores", "Pruebas automáticas del backend"],
+      "link": "https://spring.io/guides",
+      "examen": [
+        {"p": "¿Qué código HTTP indica que un recurso se creó correctamente?", "o": ["200", "201", "404", "500"], "c": 1},
+        {"p": "¿Para qué sirve validar los datos que llegan a una API?", "o": ["Para que la página cargue más bonito", "Para evitar datos incorrectos o maliciosos", "Para usar menos memoria RAM", "Para cambiar el idioma"], "c": 1},
+        {"p": "En una API REST, ¿qué método HTTP se usa normalmente para consultar datos?", "o": ["GET", "POST", "DELETE", "PATCH"], "c": 0}
+      ]
+    },
+    {
+      "clave": "analisis_datos", "titulo": "Análisis de Datos con Python", "area": "INGENIERIA_SISTEMAS", "nivel": "INTERMEDIO",
+      "horas": 38, "publicador": 2, "prerequisitos": ["python2", "bd_rel"], "habilidades": ["Python", "Análisis de Datos", "Bases de Datos"],
+      "descripcion": "Convierte datos en decisiones: limpieza, exploración y visualización con pandas, y cómo contar una historia con los resultados.",
+      "temario": ["El flujo de trabajo del análisis de datos", "DataFrames con pandas", "Limpieza de datos faltantes y duplicados", "Agrupar y resumir información", "Visualización con gráficos", "Proyecto: analizar un conjunto de datos real"],
+      "link": "https://pandas.pydata.org/docs/getting_started/index.html",
+      "examen": [
+        {"p": "¿Qué estructura de pandas representa una tabla de datos?", "o": ["Series", "DataFrame", "Array de bits", "Diccionario anidado"], "c": 1},
+        {"p": "¿Qué problema resuelve la limpieza de datos?", "o": ["Valores faltantes, duplicados o con formato incorrecto", "Falta de memoria en el servidor", "Errores de red", "Lentitud del monitor"], "c": 0},
+        {"p": "Agrupar los datos por una categoría y calcular un promedio por grupo se hace con:", "o": ["groupby", "merge", "drop", "rename"], "c": 0}
+      ]
+    },
+    {
+      "clave": "nube", "titulo": "Computación en la Nube y DevOps", "area": "INGENIERIA_SISTEMAS", "nivel": "INTERMEDIO",
+      "horas": 34, "publicador": 11, "prerequisitos": ["redes"], "habilidades": ["Computación en la Nube", "Sistemas Operativos"],
+      "descripcion": "Despliega aplicaciones como se hace hoy: contenedores con Docker, integración y entrega continuas y servicios en la nube.",
+      "temario": ["Qué es la nube: IaaS, PaaS y SaaS", "Contenedores y Docker", "Variables de entorno y configuración", "Integración y entrega continuas (CI/CD)", "Escalar y balancear una aplicación", "Monitoreo básico"],
+      "link": "https://docs.docker.com/get-started/",
+      "examen": [
+        {"p": "¿Qué es un contenedor?", "o": ["Un paquete que incluye una aplicación y todo lo que necesita para correr", "Una base de datos", "Un editor de texto", "Un tipo de red"], "c": 0},
+        {"p": "¿Qué significa CI/CD?", "o": ["Código interno y desarrollo diario", "Integración continua y entrega o despliegue continuo", "Control de interfaz y datos", "Comunicación inalámbrica digital"], "c": 1},
+        {"p": "Balancear la carga entre varias réplicas de un servicio sirve para:", "o": ["Que todo el tráfico llegue a una sola máquina", "Repartir las peticiones y seguir funcionando si una réplica falla", "Borrar los registros", "Cambiar de lenguaje de programación"], "c": 1}
+      ]
+    },
+    {
+      "clave": "arq_sw", "titulo": "Arquitectura de Software", "area": "INGENIERIA_SISTEMAS", "nivel": "INTERMEDIO",
+      "horas": 36, "publicador": 11, "prerequisitos": ["est_datos", "web_back"], "habilidades": ["Ingeniería de Software"],
+      "descripcion": "Decide cómo se organiza un sistema: capas, microservicios, patrones y los compromisos que hay detrás de cada decisión.",
+      "temario": ["Qué es la arquitectura de software", "Arquitectura en capas y hexagonal", "Monolito frente a microservicios", "Comunicación síncrona y asíncrona", "Atributos de calidad: disponibilidad y escalabilidad", "Documentar decisiones de arquitectura"],
+      "link": "https://martinfowler.com/architecture/",
+      "examen": [
+        {"p": "Una ventaja típica de los microservicios es:", "o": ["Que son más simples de operar que un monolito", "Poder escalar y desplegar cada parte por separado", "No necesitar bases de datos", "Evitar las pruebas"], "c": 1},
+        {"p": "¿Qué atributo de calidad mide qué tanto un sistema sigue funcionando ante fallas?", "o": ["Usabilidad", "Disponibilidad", "Portabilidad", "Legibilidad"], "c": 1},
+        {"p": "La arquitectura en capas busca principalmente:", "o": ["Separar responsabilidades para que cada capa se pueda cambiar con poco impacto", "Eliminar la base de datos", "Que todo el código esté en un archivo", "Evitar las interfaces"], "c": 0}
+      ]
+    },
+    {
+      "clave": "python_av", "titulo": "Python Avanzado: APIs, Pruebas y Concurrencia", "area": "INGENIERIA_SISTEMAS", "nivel": "AVANZADO",
+      "horas": 40, "publicador": 2, "prerequisitos": ["python2", "poo"], "habilidades": ["Python", "Programación"],
+      "descripcion": "Escribe Python de nivel profesional: APIs, pruebas automáticas, programación concurrente y buenas prácticas de código mantenible.",
+      "temario": ["Tipado, dataclasses y diseño de código limpio", "Construir una API web con FastAPI", "Pruebas con pytest", "Hilos, procesos y asyncio", "Rendimiento y perfilado", "Empaquetar y desplegar una aplicación"],
+      "link": "https://docs.python.org/es/3/howto/",
+      "examen": [
+        {"p": "¿Para qué sirve asyncio?", "o": ["Para escribir código concurrente que espera operaciones de entrada y salida sin bloquearse", "Para crear interfaces gráficas", "Para cifrar contraseñas", "Para convertir Python a Java"], "c": 0},
+        {"p": "¿Qué herramienta se usa comúnmente para pruebas automáticas en Python?", "o": ["pytest", "pandas", "numpy", "matplotlib"], "c": 0},
+        {"p": "Las anotaciones de tipo (type hints) ayudan a:", "o": ["Que el programa corra más rápido siempre", "Documentar y detectar errores de tipos antes de ejecutar", "Evitar usar funciones", "Guardar datos en disco"], "c": 1}
+      ]
+    },
+    {
+      "clave": "ia_python", "titulo": "Inteligencia Artificial y Aprendizaje Automático", "area": "INGENIERIA_SISTEMAS", "nivel": "AVANZADO",
+      "horas": 48, "publicador": 9, "prerequisitos": ["analisis_datos", "prob_est"], "habilidades": ["Inteligencia Artificial", "Python"],
+      "descripcion": "Entrena y evalúa modelos de aprendizaje automático con Python: de la preparación de datos a medir qué tan bien predice un modelo.",
+      "temario": ["Qué es el aprendizaje automático", "Preparar y dividir los datos", "Regresión y clasificación", "Evaluar modelos: precisión y sobreajuste", "Redes neuronales: la idea general", "Proyecto: un modelo predictivo de principio a fin"],
+      "link": "https://scikit-learn.org/stable/user_guide.html",
+      "examen": [
+        {"p": "¿Qué es el sobreajuste (overfitting)?", "o": ["Cuando el modelo memoriza los datos de entrenamiento y generaliza mal", "Cuando el modelo es muy pequeño", "Cuando faltan datos", "Cuando el código tiene errores de sintaxis"], "c": 0},
+        {"p": "¿Por qué se separan los datos en entrenamiento y prueba?", "o": ["Para ocupar menos disco", "Para evaluar el modelo con datos que nunca vio", "Para mezclar categorías", "Para evitar escribir código"], "c": 1},
+        {"p": "Predecir un valor numérico continuo, como un precio, es un problema de:", "o": ["Clasificación", "Regresión", "Clustering", "Compresión"], "c": 1}
+      ]
+    },
+    {
+      "clave": "sd", "titulo": "Sistemas Distribuidos y Concurrencia", "area": "INGENIERIA_SISTEMAS", "nivel": "AVANZADO",
+      "horas": 44, "publicador": 11, "prerequisitos": ["arq_sw"], "habilidades": ["Sistemas Operativos", "Redes"],
+      "descripcion": "Diseña sistemas que funcionan en muchas máquinas a la vez: consistencia, tolerancia a fallos y control de concurrencia.",
+      "temario": ["Qué hace distinto a un sistema distribuido", "Concurrencia, condiciones de carrera y bloqueos", "Consistencia y teorema CAP", "Replicación y tolerancia a fallos", "Mensajería y colas", "Probar la resistencia de un sistema"],
+      "link": "https://martinfowler.com/articles/microservices.html",
+      "examen": [
+        {"p": "¿Qué es una condición de carrera?", "o": ["Un error que depende del orden en que se ejecutan procesos concurrentes", "Una prueba de velocidad", "Un tipo de red", "Un algoritmo de ordenamiento"], "c": 0},
+        {"p": "El teorema CAP afirma que, ante una partición de red, un sistema distribuido debe elegir entre:", "o": ["Velocidad y costo", "Consistencia y disponibilidad", "Seguridad y usabilidad", "Memoria y disco"], "c": 1},
+        {"p": "Replicar un servicio en varias instancias ayuda a:", "o": ["Aumentar la disponibilidad ante la caída de una instancia", "Reducir el número de usuarios", "Evitar tener base de datos", "Eliminar la red"], "c": 0}
+      ]
+    },
+
+    {
+      "clave": "mat_disc", "titulo": "Matemáticas Discretas", "area": "MATEMATICAS", "nivel": "PRINCIPIANTE",
+      "horas": 30, "publicador": 10, "prerequisitos": [], "habilidades": ["Matemática Discreta", "Álgebra Lineal"],
+      "descripcion": "La matemática detrás de la computación: lógica, conjuntos, relaciones, conteo y grafos, con ejemplos aplicados.",
+      "temario": ["Lógica proposicional", "Conjuntos y operaciones", "Relaciones y funciones", "Principios de conteo y combinatoria", "Introducción a los grafos", "Demostraciones sencillas"],
+      "link": "https://es.khanacademy.org/math",
+      "examen": [
+        {"p": "¿Cuántas formas hay de ordenar 3 elementos distintos?", "o": ["3", "6", "9", "12"], "c": 1},
+        {"p": "La proposición «si P entonces Q» es falsa solo cuando:", "o": ["P es falsa y Q es verdadera", "P es verdadera y Q es falsa", "Ambas son falsas", "Ambas son verdaderas"], "c": 1},
+        {"p": "¿Cuál es la intersección de los conjuntos {1,2,3} y {2,3,4}?", "o": ["{1,4}", "{2,3}", "{1,2,3,4}", "{}"], "c": 1}
+      ]
+    },
+    {
+      "clave": "calc1", "titulo": "Cálculo Diferencial", "area": "MATEMATICAS", "nivel": "PRINCIPIANTE",
+      "horas": 36, "publicador": 10, "prerequisitos": [], "habilidades": ["Cálculo"],
+      "descripcion": "Entiende el cambio: límites, derivadas y sus aplicaciones para optimizar y analizar el comportamiento de funciones.",
+      "temario": ["Funciones y gráficas", "Límites y continuidad", "Definición de derivada", "Reglas de derivación", "Máximos y mínimos", "Problemas de optimización"],
+      "link": "https://es.khanacademy.org/math",
+      "examen": [
+        {"p": "¿Cuál es la derivada de f(x) = x²?", "o": ["x", "2x", "x²", "2"], "c": 1},
+        {"p": "La derivada de una función en un punto representa:", "o": ["El área bajo la curva", "La pendiente de la recta tangente en ese punto", "El valor máximo de la función", "El dominio"], "c": 1},
+        {"p": "Para hallar un máximo o mínimo de una función derivable se busca donde:", "o": ["La función vale cero", "La derivada vale cero", "La función no está definida", "La gráfica corta el eje y"], "c": 1}
+      ]
+    },
+    {
+      "clave": "calc2", "titulo": "Cálculo Integral", "area": "MATEMATICAS", "nivel": "INTERMEDIO",
+      "horas": 36, "publicador": 10, "prerequisitos": ["calc1"], "habilidades": ["Cálculo"],
+      "descripcion": "Acumula el cambio: integrales definidas e indefinidas, técnicas de integración y aplicaciones al cálculo de áreas y volúmenes.",
+      "temario": ["Antiderivadas e integral indefinida", "Integral definida y área bajo la curva", "Teorema fundamental del cálculo", "Técnicas: sustitución e integración por partes", "Aplicaciones: áreas y volúmenes", "Integrales impropias"],
+      "link": "https://es.khanacademy.org/math",
+      "examen": [
+        {"p": "¿Cuál es la integral de 2x dx?", "o": ["x² + C", "2 + C", "x + C", "2x² + C"], "c": 0},
+        {"p": "La integral definida de una función positiva entre a y b representa:", "o": ["La pendiente en a", "El área bajo la curva entre a y b", "El máximo de la función", "La derivada en b"], "c": 1},
+        {"p": "El teorema fundamental del cálculo relaciona:", "o": ["Límites y sucesiones", "Derivación e integración", "Matrices y vectores", "Probabilidad y conteo"], "c": 1}
+      ]
+    },
+    {
+      "clave": "prob_est", "titulo": "Probabilidad y Estadística", "area": "MATEMATICAS", "nivel": "INTERMEDIO",
+      "horas": 36, "publicador": 10, "prerequisitos": ["calc1"], "habilidades": ["Estadística", "Probabilidad"],
+      "descripcion": "Toma decisiones con datos: probabilidad, distribuciones, estimación e inferencia, con casos de la vida real.",
+      "temario": ["Estadística descriptiva: media, mediana y desviación", "Probabilidad y eventos", "Variables aleatorias y distribuciones", "Distribución normal", "Muestreo e intervalos de confianza", "Pruebas de hipótesis"],
+      "link": "https://es.khanacademy.org/math/statistics-probability",
+      "examen": [
+        {"p": "La mediana de los datos 2, 4, 9 es:", "o": ["2", "4", "5", "9"], "c": 1},
+        {"p": "La probabilidad de que salga cara al lanzar una moneda justa es:", "o": ["0,25", "0,5", "0,75", "1"], "c": 1},
+        {"p": "La desviación estándar mide:", "o": ["El valor más frecuente", "Qué tan dispersos están los datos respecto a la media", "El máximo de los datos", "La suma de los datos"], "c": 1}
+      ]
+    },
+    {
+      "clave": "alg_lin", "titulo": "Álgebra Lineal Aplicada", "area": "MATEMATICAS", "nivel": "INTERMEDIO",
+      "horas": 32, "publicador": 10, "prerequisitos": ["mat_disc"], "habilidades": ["Álgebra Lineal"],
+      "descripcion": "Vectores, matrices y transformaciones: la base de los gráficos, la ingeniería y el aprendizaje automático.",
+      "temario": ["Vectores y operaciones", "Matrices y su producto", "Sistemas de ecuaciones lineales", "Determinantes e inversas", "Valores y vectores propios", "Aplicaciones en datos y gráficos"],
+      "link": "https://es.khanacademy.org/math/linear-algebra",
+      "examen": [
+        {"p": "El producto de una matriz 2x3 por una matriz 3x4 da una matriz de tamaño:", "o": ["3x3", "2x4", "4x2", "No se puede multiplicar"], "c": 1},
+        {"p": "Una matriz es invertible cuando su determinante es:", "o": ["Cero", "Distinto de cero", "Negativo", "Igual a uno siempre"], "c": 1},
+        {"p": "Un sistema de ecuaciones lineales puede resolverse con:", "o": ["Eliminación de Gauss", "Un compilador", "Una base de datos", "Un protocolo de red"], "c": 0}
+      ]
+    },
+
+    {
+      "clave": "cont", "titulo": "Contabilidad para no Contadores", "area": "ADMINISTRACION_EMPRESAS", "nivel": "PRINCIPIANTE",
+      "horas": 24, "publicador": 12, "prerequisitos": [], "habilidades": ["Contabilidad"],
+      "descripcion": "Lee y entiende los números de un negocio: balance, estado de resultados y flujo de caja explicados sin tecnicismos.",
+      "temario": ["Qué es la contabilidad y para qué sirve", "Activos, pasivos y patrimonio", "El balance general", "Estado de resultados", "Flujo de caja", "Indicadores básicos para decidir"],
+      "link": "https://www.gerencie.com/",
+      "examen": [
+        {"p": "La ecuación contable básica es:", "o": ["Activo = Pasivo + Patrimonio", "Activo = Pasivo - Patrimonio", "Pasivo = Activo + Patrimonio", "Patrimonio = Activo + Pasivo"], "c": 0},
+        {"p": "El estado de resultados muestra:", "o": ["Lo que la empresa debe", "Los ingresos, costos y gastos de un periodo", "El inventario físico", "La lista de empleados"], "c": 1},
+        {"p": "El flujo de caja registra:", "o": ["Solo las ventas a crédito", "Las entradas y salidas de dinero", "El valor de los edificios", "Las marcas registradas"], "c": 1}
+      ]
+    },
+    {
+      "clave": "fin", "titulo": "Finanzas para la Toma de Decisiones", "area": "ADMINISTRACION_EMPRESAS", "nivel": "INTERMEDIO",
+      "horas": 30, "publicador": 12, "prerequisitos": ["cont"], "habilidades": ["Finanzas"],
+      "descripcion": "Evalúa si una decisión vale la pena: valor del dinero en el tiempo, presupuestos, costos y análisis de inversiones.",
+      "temario": ["Valor del dinero en el tiempo", "Presupuesto y control de gastos", "Costos fijos, variables y punto de equilibrio", "Fuentes de financiación", "Evaluar una inversión: VPN y TIR", "Riesgo y rentabilidad"],
+      "link": "https://www.edx.org/es",
+      "examen": [
+        {"p": "El valor del dinero en el tiempo significa que:", "o": ["El dinero de hoy vale más que la misma cantidad en el futuro", "El dinero nunca cambia de valor", "El dinero futuro vale más que el de hoy siempre", "Solo importa el dinero en efectivo"], "c": 0},
+        {"p": "El punto de equilibrio es donde:", "o": ["Los ingresos igualan a los costos totales", "Se pierde el máximo dinero", "Se pagan los impuestos", "Se contratan empleados"], "c": 0},
+        {"p": "Un VPN (valor presente neto) positivo indica que el proyecto:", "o": ["Destruye valor", "Genera valor por encima del costo del capital", "No tiene riesgos", "Es ilegal"], "c": 1}
+      ]
+    },
+    {
+      "clave": "proy", "titulo": "Gestión de Proyectos Ágiles", "area": "ADMINISTRACION_EMPRESAS", "nivel": "INTERMEDIO",
+      "horas": 32, "publicador": 12, "prerequisitos": ["cont"], "habilidades": ["Gestión de Proyectos"],
+      "descripcion": "Planifica y entrega proyectos con Scrum y Kanban: roles, ceremonias, estimación y mejora continua del equipo.",
+      "temario": ["El manifiesto ágil", "Scrum: roles, eventos y artefactos", "Historias de usuario y backlog", "Estimación y planificación de sprints", "Kanban y flujo de trabajo", "Retrospectivas y mejora continua"],
+      "link": "https://www.atlassian.com/es/agile",
+      "examen": [
+        {"p": "En Scrum, ¿quién prioriza el backlog del producto?", "o": ["El Product Owner", "El Scrum Master", "El cliente final directamente", "El equipo de infraestructura"], "c": 0},
+        {"p": "Una retrospectiva sirve para:", "o": ["Presentar el producto al cliente", "Reflexionar sobre cómo trabajó el equipo y mejorar", "Asignar vacaciones", "Escribir la documentación legal"], "c": 1},
+        {"p": "Un sprint es:", "o": ["Un periodo corto y fijo en el que se entrega un incremento del producto", "Una reunión de un minuto", "Un tipo de contrato", "Un informe financiero"], "c": 0}
+      ]
+    },
+    {
+      "clave": "lider", "titulo": "Liderazgo de Equipos Técnicos", "area": "ADMINISTRACION_EMPRESAS", "nivel": "INTERMEDIO",
+      "horas": 28, "publicador": 12, "prerequisitos": ["proy"], "habilidades": ["Liderazgo", "Gestión Estratégica"],
+      "descripcion": "Pasa de hacer a liderar: comunicación, delegación, retroalimentación y cómo motivar y hacer crecer a un equipo técnico.",
+      "temario": ["De colaborador a líder", "Comunicación clara y escucha activa", "Delegar y dar seguimiento", "Retroalimentación efectiva", "Resolver conflictos", "Cultura de equipo y motivación"],
+      "link": "https://hbr.org/",
+      "examen": [
+        {"p": "Delegar bien implica:", "o": ["Asignar una tarea sin explicar nada", "Dar claridad sobre el resultado esperado y el apoyo disponible", "Hacerlo todo uno mismo", "Cambiar de equipo cada mes"], "c": 1},
+        {"p": "La retroalimentación efectiva debe ser:", "o": ["Vaga y general", "Específica, oportuna y enfocada en conductas", "Solo pública", "Solo negativa"], "c": 1},
+        {"p": "La escucha activa consiste en:", "o": ["Interrumpir para dar la solución", "Prestar atención plena y confirmar que se entendió", "Mirar el celular mientras el otro habla", "Hablar más fuerte"], "c": 1}
+      ]
+    },
+    {
+      "clave": "emprende", "titulo": "Emprendimiento e Innovación", "area": "ADMINISTRACION_EMPRESAS", "nivel": "INTERMEDIO",
+      "horas": 30, "publicador": 12, "prerequisitos": ["cont"], "habilidades": ["Emprendimiento", "Mercadeo"],
+      "descripcion": "De la idea al primer cliente: validar un problema real, diseñar un modelo de negocio y probar tu propuesta con poco presupuesto.",
+      "temario": ["Encontrar un problema que valga la pena resolver", "Entrevistas con clientes", "Propuesta de valor y modelo Canvas", "Producto mínimo viable", "Mercadeo para empezar", "Pitch: presentar tu idea"],
+      "link": "https://www.edx.org/es",
+      "examen": [
+        {"p": "Un producto mínimo viable (MVP) es:", "o": ["La versión final con todas las funciones", "La versión más simple que permite aprender del cliente", "Un folleto publicitario", "Un contrato de venta"], "c": 1},
+        {"p": "¿Para qué sirve el modelo Canvas?", "o": ["Para describir en una hoja cómo un negocio crea y entrega valor", "Para calcular impuestos", "Para programar una app", "Para contratar personal"], "c": 0},
+        {"p": "Validar una idea antes de construirla sirve para:", "o": ["Gastar más presupuesto", "Reducir el riesgo de construir algo que nadie necesita", "Evitar hablar con clientes", "Registrar una marca"], "c": 1}
+      ]
+    },
+
+    {
+      "clave": "ing_a2", "titulo": "Inglés Técnico A2", "area": "IDIOMAS", "nivel": "PRINCIPIANTE",
+      "horas": 40, "publicador": 12, "prerequisitos": [], "habilidades": ["Inglés"],
+      "descripcion": "Las bases del inglés para el trabajo y la tecnología: presentarte, entender instrucciones y leer textos técnicos sencillos.",
+      "temario": ["Presentaciones y saludos profesionales", "Presente simple y continuo", "Vocabulario de oficina y tecnología", "Leer instrucciones y manuales cortos", "Correos electrónicos básicos", "Comprensión auditiva de frases cotidianas"],
+      "link": "https://learnenglish.britishcouncil.org/",
+      "examen": [
+        {"p": "Elige la oración correcta:", "o": ["She work in a bank", "She works in a bank", "She working in a bank", "She are work in a bank"], "c": 1},
+        {"p": "¿Qué significa «deadline»?", "o": ["Línea de comida", "Fecha límite", "Línea de código", "Reunión"], "c": 1},
+        {"p": "¿Cómo se pregunta «¿a qué te dedicas?»", "o": ["What do you do?", "How do you do it?", "Where is you do?", "Who are you doing?"], "c": 0}
+      ]
+    },
+    {
+      "clave": "ing_b1", "titulo": "Inglés para el Trabajo B1", "area": "IDIOMAS", "nivel": "INTERMEDIO",
+      "horas": 48, "publicador": 12, "prerequisitos": ["ing_a2"], "habilidades": ["Inglés", "Conversación"],
+      "descripcion": "Comunícate con confianza en reuniones y correos: pasado, futuro, opinar y participar en conversaciones de trabajo.",
+      "temario": ["Hablar del pasado y de experiencias", "Planes y predicciones", "Dar y pedir opiniones", "Reuniones y llamadas", "Correos y mensajes profesionales", "Entrevista de trabajo básica"],
+      "link": "https://learnenglish.britishcouncil.org/",
+      "examen": [
+        {"p": "Completa: «Yesterday I ___ to the office by bus».", "o": ["go", "goes", "went", "going"], "c": 2},
+        {"p": "¿Cuál es una forma educada de pedir algo en una reunión?", "o": ["Give me the file", "Could you send me the file, please?", "File now", "You send file"], "c": 1},
+        {"p": "«I will call you tomorrow» expresa:", "o": ["Un hábito", "Una promesa o decisión sobre el futuro", "Un hecho del pasado", "Una pregunta"], "c": 1}
+      ]
+    },
+    {
+      "clave": "ing_b2", "titulo": "Inglés Profesional B2", "area": "IDIOMAS", "nivel": "AVANZADO",
+      "horas": 48, "publicador": 12, "prerequisitos": ["ing_b1"], "habilidades": ["Inglés", "Escritura Académica"],
+      "descripcion": "Domina el inglés de un entorno profesional: presentaciones, negociación, informes y lectura de documentación técnica compleja.",
+      "temario": ["Presentaciones y pitch en inglés", "Negociar y persuadir", "Redactar informes claros", "Leer documentación y artículos técnicos", "Condicionales y estructuras avanzadas", "Conversación fluida con hablantes nativos"],
+      "link": "https://learnenglish.britishcouncil.org/",
+      "examen": [
+        {"p": "Completa: «If I had more time, I ___ learn another language».", "o": ["will", "would", "am", "did"], "c": 1},
+        {"p": "¿Qué es un «executive summary» de un informe?", "o": ["Un resumen breve de las ideas clave para quien toma decisiones", "La lista de empleados", "El índice de figuras", "Una carta personal"], "c": 0},
+        {"p": "«To negotiate» significa:", "o": ["Negociar", "Navegar", "Notificar", "Numerar"], "c": 0}
+      ]
+    },
+    {
+      "clave": "redac", "titulo": "Escritura Académica y Profesional", "area": "IDIOMAS", "nivel": "INTERMEDIO",
+      "horas": 24, "publicador": 12, "prerequisitos": [], "habilidades": ["Escritura Académica", "Comprensión Lectora"],
+      "descripcion": "Escribe con claridad: estructura de un texto, argumentación, citación de fuentes y revisión para que tus ideas se entiendan.",
+      "temario": ["Estructura de un texto: introducción, desarrollo y cierre", "Escribir párrafos con una idea central", "Argumentar con evidencias", "Citar y referenciar fuentes", "Corrección: ortografía, puntuación y estilo", "Resumir y parafrasear"],
+      "link": "https://www.rae.es/",
+      "examen": [
+        {"p": "¿Qué debe tener un párrafo bien construido?", "o": ["Una idea central desarrollada con apoyo", "Muchas ideas sin relación", "Solo una frase", "Solo ejemplos"], "c": 0},
+        {"p": "Citar las fuentes sirve para:", "o": ["Alargar el texto", "Dar crédito y permitir verificar la información", "Evitar argumentar", "Cambiar el idioma"], "c": 1},
+        {"p": "Parafrasear es:", "o": ["Copiar un texto igual", "Decir lo mismo con tus propias palabras manteniendo el sentido", "Traducir palabra por palabra", "Resumir solo el título"], "c": 1}
+      ]
+    },
+
+    {
+      "clave": "proc", "titulo": "Gestión de Procesos", "area": "INGENIERIA_INDUSTRIAL", "nivel": "PRINCIPIANTE",
+      "horas": 28, "publicador": 13, "prerequisitos": [], "habilidades": ["Gestión de Procesos"],
+      "descripcion": "Aprende a ver una empresa como un conjunto de procesos: mapearlos, medirlos y encontrar dónde se pierde tiempo y dinero.",
+      "temario": ["Qué es un proceso y por qué importa", "Mapear procesos con diagramas de flujo", "Indicadores de desempeño", "Cuellos de botella", "Desperdicios más comunes", "Propuesta de mejora de un proceso real"],
+      "link": "https://asq.org/quality-resources",
+      "examen": [
+        {"p": "Un cuello de botella es:", "o": ["La etapa que limita la capacidad de todo el proceso", "El área de recursos humanos", "Un tipo de indicador financiero", "Un software de contabilidad"], "c": 0},
+        {"p": "Mapear un proceso sirve para:", "o": ["Verlo completo y encontrar oportunidades de mejora", "Reducir el número de clientes", "Cambiar el nombre de la empresa", "Evitar medir"], "c": 0},
+        {"p": "Un indicador de desempeño (KPI) permite:", "o": ["Medir qué tan bien funciona un proceso", "Decorar un informe", "Contratar personal", "Calcular impuestos"], "c": 0}
+      ]
+    },
+    {
+      "clave": "calid", "titulo": "Control de Calidad", "area": "INGENIERIA_INDUSTRIAL", "nivel": "INTERMEDIO",
+      "horas": 30, "publicador": 13, "prerequisitos": ["proc"], "habilidades": ["Control de Calidad"],
+      "descripcion": "Garantiza que lo que produces cumple lo prometido: herramientas estadísticas de calidad, auditorías y mejora basada en datos.",
+      "temario": ["Qué es la calidad y su costo", "Las siete herramientas básicas de la calidad", "Control estadístico de procesos", "Cartas de control", "Auditorías y normas ISO 9001", "Planes de acción y mejora"],
+      "link": "https://asq.org/quality-resources",
+      "examen": [
+        {"p": "Un diagrama de Pareto sirve para:", "o": ["Identificar las pocas causas que producen la mayoría de los problemas", "Dibujar planos", "Calcular salarios", "Medir temperatura"], "c": 0},
+        {"p": "La norma ISO 9001 trata sobre:", "o": ["Gestión de la calidad", "Seguridad informática", "Medio ambiente", "Contabilidad"], "c": 0},
+        {"p": "Una carta de control permite:", "o": ["Vigilar si un proceso se mantiene estable en el tiempo", "Escribir actas", "Registrar asistencia", "Planear vacaciones"], "c": 0}
+      ]
+    },
+    {
+      "clave": "lean", "titulo": "Lean Manufacturing y Mejora Continua", "area": "INGENIERIA_INDUSTRIAL", "nivel": "INTERMEDIO",
+      "horas": 32, "publicador": 13, "prerequisitos": ["proc"], "habilidades": ["Mejora Continua", "Gestión de Producción"],
+      "descripcion": "Produce más con menos desperdicio: principios Lean, 5S, mapeo de flujo de valor y cultura de mejora continua.",
+      "temario": ["Principios del pensamiento Lean", "Los 8 desperdicios", "Metodología 5S", "Mapeo del flujo de valor", "Kanban y producción justo a tiempo", "Kaizen: mejora continua"],
+      "link": "https://www.lean.org/explore-lean/what-is-lean/",
+      "examen": [
+        {"p": "Kaizen significa:", "o": ["Mejora continua", "Inventario máximo", "Producción en masa", "Control de costos"], "c": 0},
+        {"p": "El objetivo central de Lean es:", "o": ["Maximizar el valor para el cliente eliminando desperdicios", "Aumentar el inventario", "Contratar más personal", "Reducir la calidad"], "c": 0},
+        {"p": "Las 5S sirven para:", "o": ["Mantener un lugar de trabajo ordenado, limpio y estandarizado", "Calcular salarios", "Crear logotipos", "Programar software"], "c": 0}
+      ]
+    },
+    {
+      "clave": "logis", "titulo": "Logística y Cadena de Suministro", "area": "INGENIERIA_INDUSTRIAL", "nivel": "INTERMEDIO",
+      "horas": 34, "publicador": 13, "prerequisitos": ["proc"], "habilidades": ["Logística"],
+      "descripcion": "Haz que el producto correcto llegue al lugar y momento correctos: inventarios, transporte, almacenes y planeación de la demanda.",
+      "temario": ["Qué es la cadena de suministro", "Gestión de inventarios", "Pronóstico de la demanda", "Almacenamiento y distribución", "Transporte y rutas", "Indicadores logísticos"],
+      "link": "https://www.ascm.org/",
+      "examen": [
+        {"p": "Tener demasiado inventario genera principalmente:", "o": ["Costos de almacenamiento y capital inmovilizado", "Más clientes", "Menos facturas", "Mayor calidad siempre"], "c": 0},
+        {"p": "Pronosticar la demanda sirve para:", "o": ["Planear cuánto producir y comprar", "Elegir el color de la oficina", "Contratar abogados", "Cambiar de proveedor de internet"], "c": 0},
+        {"p": "La cadena de suministro abarca:", "o": ["Desde los proveedores hasta el cliente final", "Solo el almacén", "Solo el transporte", "Solo la fábrica"], "c": 0}
+      ]
+    }
+  ]
+}

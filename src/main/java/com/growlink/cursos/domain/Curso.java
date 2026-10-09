@@ -2,7 +2,9 @@ package com.growlink.cursos.domain;
 
 import jakarta.persistence.*;
 
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 
 @Entity
@@ -36,6 +38,17 @@ public class Curso {
 
     private String linkContenido;
 
+    // cuantas horas toma el curso, lo escribe quien lo publica (puede ser null en cursos viejos)
+    private Integer duracionHoras;
+
+    // los temas del curso en orden, es lo que el estudiante ve antes de decidir si tomarlo
+    // EAGER porque open-in-view esta apagado
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "curso_temario", joinColumns = @JoinColumn(name = "curso_id"))
+    @OrderColumn(name = "orden")
+    @Column(name = "tema", length = 300)
+    private List<String> temario = new ArrayList<>();
+
     @Column(nullable = false)
     private boolean activo;
 
@@ -58,15 +71,21 @@ public class Curso {
         this.activo = true;
     }
 
-    // HU-08: editar titulo, descripcion, nivel, habilidades y link.
+    // HU-08: editar titulo, descripcion, nivel, habilidades, link, horas y temario.
     // La categoria no se edita aqui porque las habilidades estan atadas a ella.
     public void editar(String titulo, String descripcion, Nivel nivel, Set<Habilidad> habilidades,
-                        String linkContenido) {
+                        String linkContenido, Integer duracionHoras, List<String> temario) {
         this.titulo = titulo;
         this.descripcion = descripcion;
         this.nivel = nivel;
         this.habilidades = new LinkedHashSet<>(habilidades);
         this.linkContenido = linkContenido;
+        definirDetalle(duracionHoras, temario);
+    }
+
+    public void definirDetalle(Integer duracionHoras, List<String> temario) {
+        this.duracionHoras = duracionHoras;
+        this.temario = temario == null ? new ArrayList<>() : new ArrayList<>(temario);
     }
 
     // HU-09: baja logica, no se borra la fila
@@ -100,6 +119,14 @@ public class Curso {
 
     public String getLinkContenido() {
         return linkContenido;
+    }
+
+    public Integer getDuracionHoras() {
+        return duracionHoras;
+    }
+
+    public List<String> getTemario() {
+        return temario;
     }
 
     public boolean isActivo() {

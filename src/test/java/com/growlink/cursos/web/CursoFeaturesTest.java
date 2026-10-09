@@ -25,7 +25,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 // Cubre lo nuevo: catalogo cerrado de habilidades (HU-06 parte), HU-08 (editar),
 // HU-09 (baja logica), HU-10 (estado-roadmap), HU-13 (catalogo con filtros),
 // HU-14/15 (completar cursos) y HU-11/12 (roadmap, modo de respaldo sin API key).
-@SpringBootTest
+@SpringBootTest(properties = "CLAUDE_API_KEY=")
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class CursoFeaturesTest {
@@ -151,26 +151,49 @@ class CursoFeaturesTest {
 
     @Test
     void hu1415CompletarCursoYVerHistorial() throws Exception {
-        Long cursoId = crearCurso("Ingles basico", "IDIOMAS", "PRINCIPIANTE", List.of(), 2005L);
+        Long cursoId = crearCursoConExamen("Ingles basico", "IDIOMAS", 2005L);
         long usuarioId = 3001L;
 
+        // una persona ya no puede completar un curso a la palabra: eso lo puede hacer solo un ADMIN
         mockMvc.perform(post("/api/cursos/" + cursoId + "/completar")
                         .header("Authorization", token(usuarioId, "STUDENT"))
                         .contentType("application/json")
                         .content("{\"usuarioId\": " + usuarioId + "}"))
-                .andExpect(status().isCreated());
+                .andExpect(status().isForbidden());
 
-        // completar dos veces se rechaza
-        mockMvc.perform(post("/api/cursos/" + cursoId + "/completar")
+        // un examen reprobado no completa el curso
+        mockMvc.perform(post("/api/cursos/" + cursoId + "/examen")
                         .header("Authorization", token(usuarioId, "STUDENT"))
                         .contentType("application/json")
-                        .content("{\"usuarioId\": " + usuarioId + "}"))
-                .andExpect(status().isConflict());
+                        .content("{\"respuestas\": [0, 0, 0]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.aprobado").value(false))
+                .andExpect(jsonPath("$.cursoCompletado").value(false));
+        mockMvc.perform(get("/api/cursos/completados").param("usuarioId", String.valueOf(usuarioId))
+                        .header("Authorization", token(usuarioId, "STUDENT")))
+                .andExpect(jsonPath("$[?(@.cursoId == " + cursoId + ")]").isEmpty());
+
+        // aprobar el examen si lo completa
+        mockMvc.perform(post("/api/cursos/" + cursoId + "/examen")
+                        .header("Authorization", token(usuarioId, "STUDENT"))
+                        .contentType("application/json")
+                        .content("{\"respuestas\": [1, 1, 1]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.aprobado").value(true))
+                .andExpect(jsonPath("$.cursoCompletado").value(true));
+
+        // presentarlo otra vez no duplica el curso en el historial
+        mockMvc.perform(post("/api/cursos/" + cursoId + "/examen")
+                        .header("Authorization", token(usuarioId, "STUDENT"))
+                        .contentType("application/json")
+                        .content("{\"respuestas\": [1, 1, 1]}"))
+                .andExpect(status().isOk());
 
         mockMvc.perform(get("/api/cursos/completados").param("usuarioId", String.valueOf(usuarioId))
                         .header("Authorization", token(usuarioId, "STUDENT")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.cursoId == " + cursoId + ")].disponible").value(hasItem(true)));
+                .andExpect(jsonPath("$[?(@.cursoId == " + cursoId + ")].disponible").value(hasItem(true)))
+                .andExpect(jsonPath("$[?(@.cursoId == " + cursoId + ")]", org.hamcrest.Matchers.hasSize(1)));
 
         // se da de baja el curso, pero el historial lo sigue mostrando (ya no disponible)
         mockMvc.perform(patch("/api/cursos/" + cursoId + "/baja")
@@ -185,8 +208,10 @@ class CursoFeaturesTest {
 
     @Test
     void hu1112RoadmapConModoDeRespaldoRespetaPrerequisitos() throws Exception {
-        Long base = crearCurso("Programacion I", "INGENIERIA_SISTEMAS", "PRINCIPIANTE", List.of(), 2006L);
-        Long avanzado = crearCurso("Estructuras de Datos", "INGENIERIA_SISTEMAS", "INTERMEDIO", List.of(), 2006L);
+        // palabra inventada en el titulo: el respaldo ahora elige segun la meta, y con el catalogo de demostracion
+        // sembrado cualquier palabra comun (programacion, datos...) competiria con decenas de cursos
+        Long base = crearCurso("Zebracodigo Base", "INGENIERIA_SISTEMAS", "PRINCIPIANTE", List.of(), 2006L);
+        Long avanzado = crearCurso("Zebracodigo Avanzado", "INGENIERIA_SISTEMAS", "INTERMEDIO", List.of(), 2006L);
 
         mockMvc.perform(put("/api/cursos/" + avanzado + "/prerequisitos")
                         .header("Authorization", token(2006, "PROFESSOR"))
@@ -197,7 +222,7 @@ class CursoFeaturesTest {
         long usuarioId = 4001L;
         Map<String, Object> generar = new HashMap<>();
         generar.put("usuarioId", usuarioId);
-        generar.put("metas", "Quiero ser desarrollador backend");
+        generar.put("metas", "Quiero dominar zebracodigo a fondo");
         generar.put("intereses", List.of("INGENIERIA_SISTEMAS"));
         generar.put("nivel", "INTERMEDIO");
 
@@ -310,6 +335,33 @@ class CursoFeaturesTest {
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> objemapperAListaDeMapas(String json) throws Exception {
         return objectMapper.readValue(json, List.class);
+    }
+
+    // un curso con examen de 3 preguntas donde la opcion correcta de todas es la segunda (indice 1)
+    private Long crearCursoConExamen(String titulo, String categoria, Long publicadorUsuarioId) throws Exception {
+        List<Map<String, Object>> examen = new java.util.ArrayList<>();
+        for (int i = 1; i <= 3; i++) {
+            examen.add(Map.of("enunciado", "Pregunta " + i + " de " + titulo,
+                    "opciones", List.of("a", "b", "c", "d"), "respuestaCorrecta", 1));
+        }
+        Map<String, Object> body = new HashMap<>();
+        body.put("titulo", titulo);
+        body.put("categoria", categoria);
+        body.put("nivel", "PRINCIPIANTE");
+        body.put("habilidadIds", List.of());
+        body.put("publicadorUsuarioId", publicadorUsuarioId);
+        body.put("prerequisitoIds", List.of());
+        body.put("duracionHoras", 10);
+        body.put("temario", List.of("Tema uno", "Tema dos"));
+        body.put("examen", examen);
+
+        String response = mockMvc.perform(post("/api/cursos")
+                        .header("Authorization", token(publicadorUsuarioId, "PROFESSOR"))
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        return ((Number) objectMapper.readValue(response, Map.class).get("id")).longValue();
     }
 
     private Long crearCurso(String titulo, String categoria, String nivel, List<Long> habilidadIds,

@@ -18,7 +18,7 @@ import java.util.Map;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest
+@SpringBootTest(properties = "CLAUDE_API_KEY=")
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class CursoControllerTest {

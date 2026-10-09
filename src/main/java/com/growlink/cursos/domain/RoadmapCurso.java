@@ -20,14 +20,23 @@ public class RoadmapCurso {
     @Column(nullable = false)
     private int orden;
 
+    // por que este curso esta en la ruta de esta persona, en una frase
+    @Column(length = 500)
+    private String razon;
+
     protected RoadmapCurso() {
         // JPA
     }
 
-    public RoadmapCurso(Long roadmapId, Long cursoId, int orden) {
+    public RoadmapCurso(Long roadmapId, Long cursoId, int orden, String razon) {
         this.roadmapId = roadmapId;
         this.cursoId = cursoId;
         this.orden = orden;
+        this.razon = razon;
+    }
+
+    public String getRazon() {
+        return razon;
     }
 
     public Long getId() {

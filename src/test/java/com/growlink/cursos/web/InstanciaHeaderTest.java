@@ -12,7 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 // el header X-Instancia es lo que permite ver el balanceo entre replicas
-@SpringBootTest
+@SpringBootTest(properties = "CLAUDE_API_KEY=")
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class InstanciaHeaderTest {

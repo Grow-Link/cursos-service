@@ -33,16 +33,35 @@ public class Roadmap {
     @Enumerated(EnumType.STRING)
     private FuenteRoadmap generadoPor;
 
+    // una o dos frases que resumen la ruta para esta persona (la escribe la IA, o el respaldo)
+    @Column(length = 800)
+    private String resumen;
+
+    // las areas con las que se genero, separadas por coma (ej. INGENIERIA_SISTEMAS,MATEMATICAS)
+    @Column(length = 300)
+    private String intereses;
+
     protected Roadmap() {
         // JPA
     }
 
-    public Roadmap(Long usuarioId, String metas, Nivel nivel, FuenteRoadmap generadoPor) {
+    public Roadmap(Long usuarioId, String metas, Nivel nivel, FuenteRoadmap generadoPor, String resumen,
+                   String intereses) {
         this.usuarioId = usuarioId;
         this.metas = metas;
         this.nivel = nivel;
         this.creadoEn = Instant.now();
         this.generadoPor = generadoPor;
+        this.resumen = resumen;
+        this.intereses = intereses;
+    }
+
+    public String getResumen() {
+        return resumen;
+    }
+
+    public String getIntereses() {
+        return intereses;
     }
 
     public FuenteRoadmap getGeneradoPor() {

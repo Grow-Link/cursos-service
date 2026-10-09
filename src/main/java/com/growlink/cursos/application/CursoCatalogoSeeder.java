@@ -1,102 +1,158 @@
 package com.growlink.cursos.application;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.growlink.cursos.adapter.persistence.CursoRepository;
 import com.growlink.cursos.adapter.persistence.HabilidadRepository;
+import com.growlink.cursos.adapter.persistence.PreguntaExamenRepository;
+import com.growlink.cursos.adapter.persistence.RoadmapRepository;
 import com.growlink.cursos.domain.Categoria;
 import com.growlink.cursos.domain.Curso;
 import com.growlink.cursos.domain.Habilidad;
 import com.growlink.cursos.domain.Nivel;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.io.InputStream;
+import java.util.*;
+import java.util.stream.Collectors;
 
-// Siembra un catalogo real de cursos (con prerequisitos reales) la primera
-// vez que arranca el servicio, igual de "punto de partida" que
-// HabilidadCatalogoSeeder: solo corre si la tabla curso esta vacia, y se
-// puede seguir ampliando despues agregando filas sin tocar codigo.
+// Siembra el catalogo de demostracion (src/main/resources/catalogo-demo.json): cursos reales con descripcion,
+// horas, temario, enlace, prerequisitos y examen. Se puede ampliar editando ese archivo o publicando cursos
+// desde la aplicacion.
 //
-// Mismos titulos/categorias/niveles/prerequisitos que usa
-// GrowLink-FRONTEND/scripts/seed-roadmap-demo.mjs (constante CATALOGO), para
-// que los datos de demo del frontend y el catalogo real de este servicio
-// queden consistentes.
+// Es seguro correrlo en cada arranque:
+//  - un curso que no existe se crea completo;
+//  - un curso viejo con el mismo titulo pero SIN horas (los 11 que se sembraban antes) se completa una sola vez;
+//  - un curso que ya tiene horas NO se toca (asi no se pisa lo que un publicador haya editado), solo se le
+//    agrega el examen si no tenia ninguno.
+// Al final deja un usuario de demostracion con un roadmap y cursos ya aprobados, para mostrar el avance.
 @Component
 public class CursoCatalogoSeeder implements CommandLineRunner {
 
-    // key -> definicion. prerequisitoKeys usa keys de esta misma lista y
-    // tiene que ir en orden (los prerequisitos antes que quien los requiere),
-    // igual que en el script del frontend.
-    private record DefinicionCurso(String key, String titulo, Categoria categoria, Nivel nivel,
-                                    Long publicadorUsuarioId, List<String> prerequisitoKeys,
-                                    List<String> habilidades) {
+    private static final Logger log = LoggerFactory.getLogger(CursoCatalogoSeeder.class);
+
+    // usuario sembrado en usuarios-service con este mismo perfil (Esteban Londoño, Desarrollador Junior)
+    static final long USUARIO_DEMO_ID = 5L;
+    static final String USUARIO_DEMO_META = "Quiero ser desarrollador backend y trabajar con datos usando Python";
+    static final int CURSOS_YA_APROBADOS_DEMO = 3;
+
+    record PreguntaDemo(String p, List<String> o, int c) {
     }
 
-    // publicadorUsuarioId usa ids de PUBLICADOR ya sembrados en usuarios-service
-    // (2, 9, 10, 11, 12, 13), repartidos entre los cursos.
-    private static final List<DefinicionCurso> CATALOGO = List.of(
-            new DefinicionCurso("mat1", "Matemáticas Discretas", Categoria.MATEMATICAS, Nivel.PRINCIPIANTE,
-                    2L, List.of(), List.of("Álgebra Lineal")),
-            new DefinicionCurso("sis1", "Fundamentos de Programación", Categoria.INGENIERIA_SISTEMAS,
-                    Nivel.PRINCIPIANTE, 9L, List.of(), List.of("Programación")),
-            new DefinicionCurso("sis2", "Bases de Datos Relacionales", Categoria.INGENIERIA_SISTEMAS,
-                    Nivel.PRINCIPIANTE, 10L, List.of(), List.of("Bases de Datos")),
-            new DefinicionCurso("adm1", "Contabilidad para no Contadores", Categoria.ADMINISTRACION_EMPRESAS,
-                    Nivel.PRINCIPIANTE, 11L, List.of(), List.of("Contabilidad")),
-            new DefinicionCurso("sis3", "Programación Orientada a Objetos", Categoria.INGENIERIA_SISTEMAS,
-                    Nivel.PRINCIPIANTE, 12L, List.of("sis1"), List.of("Programación", "Ingeniería de Software")),
-            new DefinicionCurso("adm2", "Gestión de Proyectos Ágiles", Categoria.ADMINISTRACION_EMPRESAS,
-                    Nivel.INTERMEDIO, 13L, List.of("adm1", "sis1"), List.of("Gestión de Proyectos")),
-            new DefinicionCurso("sis4", "Estructuras de Datos y Algoritmos", Categoria.INGENIERIA_SISTEMAS,
-                    Nivel.INTERMEDIO, 2L, List.of("sis3", "mat1"), List.of("Estructuras de Datos")),
-            new DefinicionCurso("sis5", "Desarrollo Web Backend", Categoria.INGENIERIA_SISTEMAS, Nivel.INTERMEDIO,
-                    9L, List.of("sis3", "sis2"), List.of("Programación", "Bases de Datos")),
-            new DefinicionCurso("sis6", "Arquitectura de Software", Categoria.INGENIERIA_SISTEMAS, Nivel.INTERMEDIO,
-                    10L, List.of("sis4", "sis5"), List.of("Ingeniería de Software")),
-            new DefinicionCurso("adm3", "Liderazgo de Equipos Técnicos", Categoria.ADMINISTRACION_EMPRESAS,
-                    Nivel.INTERMEDIO, 11L, List.of("adm2", "sis5"), List.of("Gestión Estratégica")),
-            new DefinicionCurso("sis7", "Sistemas Distribuidos y Concurrencia", Categoria.INGENIERIA_SISTEMAS,
-                    Nivel.AVANZADO, 12L, List.of("sis6"), List.of("Sistemas Operativos", "Redes"))
-    );
+    record CursoDemo(String clave, String titulo, Categoria area, Nivel nivel, int horas, long publicador,
+                     List<String> prerequisitos, List<String> habilidades, String descripcion,
+                     List<String> temario, String link, List<PreguntaDemo> examen) {
+    }
+
+    record CatalogoDemo(List<CursoDemo> cursos) {
+    }
 
     private final CursoRepository cursoRepository;
     private final CursoService cursoService;
+    private final ExamenService examenService;
+    private final RoadmapService roadmapService;
+    private final RoadmapRepository roadmapRepository;
+    private final PreguntaExamenRepository preguntaRepository;
     private final HabilidadRepository habilidadRepository;
     private final HabilidadCatalogoSeeder habilidadCatalogoSeeder;
+    private final ObjectMapper objectMapper;
 
     public CursoCatalogoSeeder(CursoRepository cursoRepository, CursoService cursoService,
+                                ExamenService examenService, RoadmapService roadmapService,
+                                RoadmapRepository roadmapRepository, PreguntaExamenRepository preguntaRepository,
                                 HabilidadRepository habilidadRepository,
-                                HabilidadCatalogoSeeder habilidadCatalogoSeeder) {
+                                HabilidadCatalogoSeeder habilidadCatalogoSeeder, ObjectMapper objectMapper) {
         this.cursoRepository = cursoRepository;
         this.cursoService = cursoService;
+        this.examenService = examenService;
+        this.roadmapService = roadmapService;
+        this.roadmapRepository = roadmapRepository;
+        this.preguntaRepository = preguntaRepository;
         this.habilidadRepository = habilidadRepository;
         this.habilidadCatalogoSeeder = habilidadCatalogoSeeder;
+        this.objectMapper = objectMapper;
     }
 
     @Override
-    public void run(String... args) {
-        // Spring no garantiza el orden entre CommandLineRunner sin @Order, y
-        // este seeder necesita que el catalogo de habilidades ya exista.
-        // Llamarlo aqui es seguro: HabilidadCatalogoSeeder ya es idempotente
-        // (solo siembra si su tabla esta vacia), asi que no importa si Spring
-        // tambien lo invoca por su cuenta despues.
+    public void run(String... args) throws Exception {
+        // Spring no garantiza el orden entre CommandLineRunner sin @Order, y este seeder necesita que el
+        // catalogo de habilidades ya exista. Llamarlo aqui es seguro: es idempotente
         habilidadCatalogoSeeder.run();
 
-        if (cursoRepository.count() > 0) {
-            return;
+        List<CursoDemo> definiciones = leerCatalogo();
+        Map<String, Curso> porTitulo = new HashMap<>();
+        for (Curso c : cursoRepository.findAll()) {
+            porTitulo.putIfAbsent(c.getTitulo(), c);
         }
 
-        Map<String, Long> idPorKey = new HashMap<>();
-        for (DefinicionCurso def : CATALOGO) {
-            List<Long> prerequisitoIds = def.prerequisitoKeys().stream().map(idPorKey::get).toList();
-            List<Long> habilidadIds = habilidadIdsPorNombre(def.categoria(), def.habilidades());
-            String descripcion = "Curso de catálogo de " + def.categoria() + " (" + def.nivel() + ").";
+        // primera pasada: crear o completar los cursos (los prerequisitos van despues, en la segunda pasada,
+        // porque un curso puede depender de otro que aparece mas abajo en el archivo)
+        Map<String, Long> idPorClave = new HashMap<>();
+        Set<String> aActualizarPrerequisitos = new LinkedHashSet<>();
+        for (CursoDemo def : definiciones) {
+            List<Long> habilidadIds = habilidadIdsPorNombre(def.area(), def.habilidades());
+            List<PreguntaExamenInput> examen = def.examen().stream()
+                    .map(q -> new PreguntaExamenInput(q.p(), q.o(), q.c())).toList();
+            Curso existente = porTitulo.get(def.titulo());
+            if (existente == null) {
+                Curso nuevo = cursoService.crear(def.titulo(), def.descripcion(), def.area(), def.nivel(), habilidadIds,
+                        def.link(), def.publicador(), List.of(), def.horas(), def.temario(), examen,
+                        def.publicador(), true);
+                idPorClave.put(def.clave(), nuevo.getId());
+                aActualizarPrerequisitos.add(def.clave());
+            } else if (existente.getDuracionHoras() == null) {
+                cursoService.editar(existente.getId(), def.titulo(), def.descripcion(), def.nivel(), habilidadIds,
+                        def.link(), def.horas(), def.temario(), examen, existente.getPublicadorUsuarioId(), true);
+                idPorClave.put(def.clave(), existente.getId());
+                aActualizarPrerequisitos.add(def.clave());
+            } else {
+                idPorClave.put(def.clave(), existente.getId());
+                if (preguntaRepository.countByCursoId(existente.getId()) == 0) {
+                    examenService.reemplazar(existente.getId(), examen);
+                }
+            }
+        }
 
-            Curso curso = cursoService.crear(def.titulo(), descripcion, def.categoria(), def.nivel(),
-                    habilidadIds, null, def.publicadorUsuarioId(), prerequisitoIds,
-                    def.publicadorUsuarioId(), true);
-            idPorKey.put(def.key(), curso.getId());
+        // segunda pasada: los prerequisitos reales de los cursos que se acaban de crear o completar
+        for (CursoDemo def : definiciones) {
+            if (!aActualizarPrerequisitos.contains(def.clave())) {
+                continue;
+            }
+            List<Long> prerequisitoIds = def.prerequisitos().stream().map(idPorClave::get).toList();
+            cursoService.actualizarPrerequisitos(idPorClave.get(def.clave()), prerequisitoIds, def.publicador(), true);
+        }
+
+        sembrarUsuarioDemo();
+    }
+
+    private List<CursoDemo> leerCatalogo() throws Exception {
+        try (InputStream in = new ClassPathResource("catalogo-demo.json").getInputStream()) {
+            return objectMapper.readValue(in, CatalogoDemo.class).cursos();
+        }
+    }
+
+    // Un usuario que ya va por la mitad: tiene su roadmap y ya aprobo los primeros cursos, para poder mostrar
+    // como avanza el camino sin tener que hacer todos los examenes en vivo. Solo se crea si todavia no tiene roadmap.
+    // Usa siempre el modo de respaldo: sembrar datos nunca gasta una llamada a la IA.
+    private void sembrarUsuarioDemo() {
+        try {
+            if (roadmapRepository.findFirstByUsuarioIdOrderByCreadoEnDesc(USUARIO_DEMO_ID).isPresent()) {
+                return;
+            }
+            RoadmapDetalle ruta = roadmapService.generarConRespaldo(USUARIO_DEMO_ID, USUARIO_DEMO_META,
+                    List.of(Categoria.INGENIERIA_SISTEMAS), Nivel.PRINCIPIANTE);
+            ruta.cursos().stream().limit(CURSOS_YA_APROBADOS_DEMO).forEach(c -> {
+                try {
+                    cursoService.completar(c.curso().getId(), USUARIO_DEMO_ID);
+                } catch (CursoYaCompletadoException e) {
+                    // ya estaba, no pasa nada
+                }
+            });
+        } catch (RuntimeException e) {
+            log.warn("No se pudo sembrar el usuario de demostracion: {}", e.getMessage());
         }
     }
 
@@ -109,6 +165,6 @@ public class CursoCatalogoSeeder implements CommandLineRunner {
                         .map(Habilidad::getId)
                         .orElseThrow(() -> new IllegalStateException(
                                 "CursoCatalogoSeeder: no se encontro la habilidad '" + nombre + "' en " + categoria)))
-                .toList();
+                .collect(Collectors.toList());
     }
 }

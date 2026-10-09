@@ -8,6 +8,8 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 // Siembra el catalogo cerrado de habilidades la primera vez que arranca el
 // servicio (tabla vacia). Es un punto de partida, se puede ampliar despues
@@ -18,13 +20,14 @@ public class HabilidadCatalogoSeeder implements CommandLineRunner {
     private static final Map<Categoria, List<String>> CATALOGO = Map.ofEntries(
             Map.entry(Categoria.INGENIERIA_SISTEMAS, List.of(
                     "Programación", "Estructuras de Datos", "Bases de Datos", "Redes",
-                    "Sistemas Operativos", "Ingeniería de Software", "Inteligencia Artificial", "Ciberseguridad")),
+                    "Sistemas Operativos", "Ingeniería de Software", "Inteligencia Artificial", "Ciberseguridad",
+                    "Python", "Análisis de Datos", "Desarrollo Web", "Computación en la Nube")),
             Map.entry(Categoria.INGENIERIA_CIVIL, List.of(
                     "Estructuras", "Geotecnia", "Hidráulica", "Materiales de Construcción",
                     "Topografía", "Gestión de Obras")),
             Map.entry(Categoria.INGENIERIA_INDUSTRIAL, List.of(
                     "Gestión de Procesos", "Logística", "Control de Calidad",
-                    "Investigación de Operaciones", "Gestión de Producción")),
+                    "Investigación de Operaciones", "Gestión de Producción", "Mejora Continua")),
             Map.entry(Categoria.INGENIERIA_ELECTRONICA, List.of(
                     "Circuitos Eléctricos", "Electrónica Digital", "Sistemas de Control",
                     "Telecomunicaciones", "Microcontroladores")),
@@ -36,10 +39,10 @@ public class HabilidadCatalogoSeeder implements CommandLineRunner {
                     "Evaluación de Impacto Ambiental")),
             Map.entry(Categoria.MATEMATICAS, List.of(
                     "Cálculo", "Álgebra Lineal", "Estadística", "Ecuaciones Diferenciales",
-                    "Métodos Numéricos")),
+                    "Métodos Numéricos", "Matemática Discreta", "Probabilidad")),
             Map.entry(Categoria.ADMINISTRACION_EMPRESAS, List.of(
                     "Finanzas", "Mercadeo", "Gestión Estratégica", "Contabilidad",
-                    "Gestión de Proyectos")),
+                    "Gestión de Proyectos", "Liderazgo", "Emprendimiento")),
             Map.entry(Categoria.IDIOMAS, List.of(
                     "Inglés", "Francés", "Comprensión Lectora", "Escritura Académica", "Conversación")),
             Map.entry(Categoria.DERECHO, List.of(
@@ -53,12 +56,14 @@ public class HabilidadCatalogoSeeder implements CommandLineRunner {
         this.habilidadRepository = habilidadRepository;
     }
 
+    // agrega las habilidades que falten, sin tocar las que ya existen: asi tambien se actualiza una base que
+    // ya tenia el catalogo viejo (el nombre es unico en toda la tabla)
     @Override
     public void run(String... args) {
-        if (habilidadRepository.count() > 0) {
-            return;
-        }
-        CATALOGO.forEach((categoria, nombres) ->
-                nombres.forEach(nombre -> habilidadRepository.save(new Habilidad(nombre, categoria))));
+        Set<String> existentes = habilidadRepository.findAll().stream().map(Habilidad::getNombre)
+                .collect(Collectors.toSet());
+        CATALOGO.forEach((categoria, nombres) -> nombres.stream()
+                .filter(nombre -> !existentes.contains(nombre))
+                .forEach(nombre -> habilidadRepository.save(new Habilidad(nombre, categoria))));
     }
 }
