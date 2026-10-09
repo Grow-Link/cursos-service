@@ -137,15 +137,16 @@ public class RoadmapService {
         return new RoadmapDetalle(roadmap, detalle);
     }
 
-    // cursos de la misma area que no estan en la ruta y se parecen al curso (comparten habilidades; si ninguno
-    // comparte, los del mismo nivel), los mas parecidos primero
+    // cursos de la misma area que no estan en la ruta y trabajan lo mismo (comparten habilidades) a un nivel igual o
+    // mas basico: uno de nivel mas alto no es otra opcion para este paso, es el paso que sigue. Los mas parecidos
+    // primero. Si no hay ninguno equivalente, la lista queda vacia: mejor nada que algo que no sirve.
     private List<Curso> alternativasDe(Curso curso, Set<Long> enRuta, List<Curso> catalogoActivo) {
         Set<Long> habilidades = curso.getHabilidades().stream().map(Habilidad::getId).collect(Collectors.toSet());
         return catalogoActivo.stream()
                 .filter(c -> !c.getId().equals(curso.getId()) && !enRuta.contains(c.getId()))
                 .filter(c -> c.getCategoria() == curso.getCategoria())
                 .map(c -> Map.entry(c, (int) c.getHabilidades().stream().filter(h -> habilidades.contains(h.getId())).count()))
-                .filter(e -> e.getValue() > 0 || e.getKey().getNivel() == curso.getNivel())
+                .filter(e -> e.getValue() > 0 && e.getKey().getNivel().ordinal() <= curso.getNivel().ordinal())
                 .sorted(Comparator.comparingInt((Map.Entry<Curso, Integer> e) -> -e.getValue())
                         .thenComparingInt(e -> Math.abs(e.getKey().getNivel().ordinal() - curso.getNivel().ordinal())))
                 .limit(MAX_ALTERNATIVAS)

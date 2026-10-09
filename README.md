@@ -91,13 +91,24 @@ descripción indicando que requieren ser el publicador dueño o tener rol
 | GET | /api/cursos/estado-roadmap?ids=1,2,3 | HU-10: cuales de esos cursos ya no estan activos |
 | PUT | /api/cursos/{id}/prerequisitos | Reemplaza los prerequisitos de un curso (valida ciclos) |
 | POST | /api/cursos/sugerir-prerequisitos | Sugiere prerequisitos (cursos activos de la misma categoria) al publicar un curso, para preseleccionar editable en el formulario |
-| PUT | /api/cursos/{id} | HU-08: edita titulo, descripcion, nivel, habilidades, link |
+| PUT | /api/cursos/{id} | HU-08: edita titulo, descripcion, nivel, habilidades, link, horas, temario y (opcional) examen |
 | PATCH | /api/cursos/{id}/baja | HU-09: baja logica (activo=false, no borra la fila) |
-| POST | /api/cursos/{id}/completar | HU-14: marca el curso como completado por un usuario |
+| GET | /api/cursos/resumen | Las areas que tienen cursos activos AHORA (cuantos, horas, niveles, habilidades, ejemplos): es lo que se muestra antes de pedir la meta |
+| GET | /api/cursos/{id}/examen | Las preguntas y opciones del examen (nunca la respuesta correcta) |
+| POST | /api/cursos/{id}/examen | HU-14: presenta el examen; con 70 % o mas el curso queda completado. El servidor califica |
+| POST | /api/cursos/{id}/completar | Solo ADMIN (para sembrar datos): completar sin examen |
 | GET | /api/cursos/completados?usuarioId=X | HU-15: historial de completados (incluye cursos ya inactivos) |
 | GET | /api/habilidades?categoria=X | Catalogo cerrado de habilidades, filtrable por categoria |
 | POST | /api/roadmap/generar | HU-11: genera y guarda un roadmap para el usuario |
 | GET | /api/roadmap/mio?usuarioId=X | HU-11/HU-05: el roadmap mas reciente del usuario (404 si no tiene) |
+
+## Catalogo, examenes y control de metas
+
+- Un curso lleva descripcion, **horas**, **temario**, enlace, habilidades, prerequisitos y un **examen** de 3 a 15 preguntas de 4 opciones (el publicador lo escribe al publicar). Sin examen no se puede completar.
+- **Completar un curso exige aprobar su examen** (minimo 70 %), calificado en el servidor: el cliente nunca recibe cual era la respuesta correcta.
+- Al arrancar se siembra un catalogo de demostracion (`src/main/resources/catalogo-demo.json`, 32 cursos reales en 5 areas) y un usuario de demostracion (id 5, Esteban) con roadmap y 3 cursos aprobados. Es seguro correrlo en cada arranque: no pisa lo que un publicador haya editado.
+- **Control de metas** (`MetaValidator`): una meta sin sentido responde 400 y una meta sin cursos relacionados en las areas elegidas responde 422, con un mensaje que la persona puede leer. Nunca se devuelve una ruta inventada o por defecto.
+- Las **alternativas** de un paso son cursos de la misma area que trabajan las mismas habilidades a un nivel igual o mas basico; si no hay ninguno equivalente, la lista va vacia.
 
 ## Catalogo cerrado de habilidades
 
