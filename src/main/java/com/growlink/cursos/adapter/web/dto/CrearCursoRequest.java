@@ -2,6 +2,8 @@ package com.growlink.cursos.adapter.web.dto;
 
 import com.growlink.cursos.domain.Categoria;
 import com.growlink.cursos.domain.Nivel;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
@@ -15,6 +17,7 @@ public record CrearCursoRequest(
         List<Long> habilidadIds,
         String linkContenido,
         @NotNull Long publicadorUsuarioId,
-        List<Long> prerequisitoIds
+        List<Long> prerequisitoIds,
+        @NotNull @Min(1) @Max(500) Integer duracionHoras
 ) {
 }

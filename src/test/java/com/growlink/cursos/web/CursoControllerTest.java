@@ -95,6 +95,7 @@ class CursoControllerTest {
         body.put("habilidadIds", java.util.List.of());
         body.put("publicadorUsuarioId", publicadorUsuarioId);
         body.put("prerequisitoIds", prerequisitoIds == null ? java.util.List.of() : prerequisitoIds);
+        body.put("duracionHoras", 20);
 
         String response = mockMvc.perform(post("/api/cursos")
                         .header("Authorization", token(publicadorUsuarioId, "PROFESSOR"))

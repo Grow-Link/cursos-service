@@ -28,13 +28,14 @@ public class CursoService {
     @Transactional
     public Curso crear(String titulo, String descripcion, Categoria categoria, Nivel nivel,
                         List<Long> habilidadIds, String linkContenido, Long publicadorUsuarioId,
-                        List<Long> prerequisitoIds, Long requestingUserId, boolean isAdmin) {
+                        List<Long> prerequisitoIds, Long requestingUserId, boolean isAdmin,
+                        Integer duracionHoras) {
         if (!isAdmin && !publicadorUsuarioId.equals(requestingUserId)) {
             throw new NoAutorizadoException();
         }
         Set<Habilidad> habilidades = habilidadService.resolverParaCategoria(habilidadIds, categoria);
         Curso curso = cursoRepository.save(new Curso(titulo, descripcion, categoria, nivel,
-                habilidades, linkContenido, publicadorUsuarioId));
+                habilidades, linkContenido, publicadorUsuarioId, duracionHoras));
         if (prerequisitoIds != null && !prerequisitoIds.isEmpty()) {
             guardarPrerequisitos(curso.getId(), prerequisitoIds);
         }
@@ -77,15 +78,22 @@ public class CursoService {
         guardarPrerequisitos(cursoId, nuevosPrerequisitoIds);
     }
 
-    // HU-08: editar titulo, descripcion, nivel, habilidades, link
+    // HU-08: editar titulo, descripcion, nivel, habilidades, link, duracionHoras
     @Transactional
     public Curso editar(Long cursoId, String titulo, String descripcion, Nivel nivel, List<Long> habilidadIds,
-                         String linkContenido, Long requestingUserId, boolean isAdmin) {
+                         String linkContenido, Long requestingUserId, boolean isAdmin, Integer duracionHoras) {
         Curso curso = obtener(cursoId);
         verificarPropietarioOAdmin(curso, requestingUserId, isAdmin);
         Set<Habilidad> habilidades = habilidadService.resolverParaCategoria(habilidadIds, curso.getCategoria());
-        curso.editar(titulo, descripcion, nivel, habilidades, linkContenido);
+        curso.editar(titulo, descripcion, nivel, habilidades, linkContenido, duracionHoras);
         return curso;
+    }
+
+    // bono (PDF del roadmap): backfill de CursoCatalogoSeeder, pisa solo
+    // descripcion/duracionHoras de un curso del catalogo (ver Curso.actualizarDatosCatalogo).
+    @Transactional
+    public void actualizarDatosDeCatalogo(Long cursoId, String descripcion, Integer duracionHoras) {
+        obtener(cursoId).actualizarDatosCatalogo(descripcion, duracionHoras);
     }
 
     // HU-09: baja logica, no borra la fila

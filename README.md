@@ -53,6 +53,13 @@ ventana; para dejarla permanente en la maquina:
 > usa `ddl-auto: update` (sin Flyway/Liquibase), en una base de datos de
 > desarrollo que ya tenia datos con el esquema viejo conviene borrar esa
 > tabla (o la base completa) antes de levantar el servicio con este cambio.
+>
+> `Curso.duracionHoras` (bono: PDF del roadmap) es nueva columna, nullable a
+> nivel de BD a proposito (`ddl-auto: update` no puede agregarla `NOT NULL`
+> con filas existentes), pero se exige con `@NotNull` al crear o editar un
+> curso por la API. Al arrancar, `CursoCatalogoSeeder` completa por titulo la
+> duracion y la descripcion real de los cursos del catalogo que ya estaban
+> sembrados sin ese dato (sin pisar los que un publicador ya haya editado).
 
 ## Seguridad
 
@@ -91,7 +98,7 @@ descripción indicando que requieren ser el publicador dueño o tener rol
 | GET | /api/cursos/estado-roadmap?ids=1,2,3 | HU-10: cuales de esos cursos ya no estan activos |
 | PUT | /api/cursos/{id}/prerequisitos | Reemplaza los prerequisitos de un curso (valida ciclos) |
 | POST | /api/cursos/sugerir-prerequisitos | Sugiere prerequisitos (cursos activos de la misma categoria) al publicar un curso, para preseleccionar editable en el formulario |
-| PUT | /api/cursos/{id} | HU-08: edita titulo, descripcion, nivel, habilidades, link |
+| PUT | /api/cursos/{id} | HU-08: edita titulo, descripcion, nivel, habilidades, link, duracionHoras |
 | PATCH | /api/cursos/{id}/baja | HU-09: baja logica (activo=false, no borra la fila) |
 | POST | /api/cursos/{id}/completar | HU-14: marca el curso como completado por un usuario |
 | GET | /api/cursos/completados?usuarioId=X | HU-15: historial de completados (incluye cursos ya inactivos) |
@@ -172,7 +179,11 @@ ADMIN si puede actuar por otros.
 
 `GET /api/roadmap/mio` devuelve los cursos del roadmap guardado con sus
 prerequisitos reales; con eso el frontend arma el grafo visual (HU-12, ver
-"Roadmap como grafo" en el README de GrowLink-FRONTEND).
+"Roadmap como grafo" en el README de GrowLink-FRONTEND). Cada curso en esa
+respuesta (y en la de `POST /api/roadmap/generar`) trae tambien
+`descripcion`, `duracionHoras`, `habilidades` (nombres) y `linkContenido`,
+para que el frontend pueda armar el PDF del roadmap (bono) sin pedir cada
+curso aparte.
 
 `POST /api/cursos/sugerir-prerequisitos` (body: `categoria`, `nivel`,
 `titulo`, `descripcion?`) reutiliza esta misma infraestructura (mismo
