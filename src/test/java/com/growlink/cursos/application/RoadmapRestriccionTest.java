@@ -223,6 +223,7 @@ class RoadmapRestriccionTest {
         cuerpo.put("habilidadIds", List.of());
         cuerpo.put("publicadorUsuarioId", publicadorId);
         cuerpo.put("prerequisitoIds", List.of());
+        cuerpo.put("duracionHoras", 20);
 
         String respuesta = mockMvc.perform(post("/api/cursos")
                         .header("Authorization", token(publicadorId, "PROFESSOR"))

@@ -36,6 +36,11 @@ public class Curso {
 
     private String linkContenido;
 
+    // bono: duracion del curso en horas, para mostrarla en el roadmap/PDF.
+    // nullable a nivel de BD a proposito (ddl-auto=update, ya hay filas sin
+    // este dato); se exige al crear/editar via @NotNull en los DTOs de request.
+    private Integer duracionHoras;
+
     @Column(nullable = false)
     private boolean activo;
 
@@ -47,7 +52,8 @@ public class Curso {
     }
 
     public Curso(String titulo, String descripcion, Categoria categoria, Nivel nivel,
-                 Set<Habilidad> habilidades, String linkContenido, Long publicadorUsuarioId) {
+                 Set<Habilidad> habilidades, String linkContenido, Long publicadorUsuarioId,
+                 Integer duracionHoras) {
         this.titulo = titulo;
         this.descripcion = descripcion;
         this.categoria = categoria;
@@ -55,18 +61,28 @@ public class Curso {
         this.habilidades = new LinkedHashSet<>(habilidades);
         this.linkContenido = linkContenido;
         this.publicadorUsuarioId = publicadorUsuarioId;
+        this.duracionHoras = duracionHoras;
         this.activo = true;
     }
 
-    // HU-08: editar titulo, descripcion, nivel, habilidades y link.
+    // HU-08: editar titulo, descripcion, nivel, habilidades, link y duracionHoras.
     // La categoria no se edita aqui porque las habilidades estan atadas a ella.
     public void editar(String titulo, String descripcion, Nivel nivel, Set<Habilidad> habilidades,
-                        String linkContenido) {
+                        String linkContenido, Integer duracionHoras) {
         this.titulo = titulo;
         this.descripcion = descripcion;
         this.nivel = nivel;
         this.habilidades = new LinkedHashSet<>(habilidades);
         this.linkContenido = linkContenido;
+        this.duracionHoras = duracionHoras;
+    }
+
+    // bono (PDF del roadmap): backfill de CursoCatalogoSeeder sobre cursos
+    // sembrados antes de que existiera duracionHoras real. No es un metodo de
+    // edicion general (no pasa por CursoService.editar ni valida dueño/admin).
+    public void actualizarDatosCatalogo(String descripcion, Integer duracionHoras) {
+        this.descripcion = descripcion;
+        this.duracionHoras = duracionHoras;
     }
 
     // HU-09: baja logica, no se borra la fila
@@ -100,6 +116,10 @@ public class Curso {
 
     public String getLinkContenido() {
         return linkContenido;
+    }
+
+    public Integer getDuracionHoras() {
+        return duracionHoras;
     }
 
     public boolean isActivo() {

@@ -46,7 +46,8 @@ public class CursoController {
     public ResponseEntity<CursoResponse> crear(@Valid @RequestBody CrearCursoRequest request) {
         Curso curso = cursoService.crear(request.titulo(), request.descripcion(), request.categoria(),
                 request.nivel(), request.habilidadIds(), request.linkContenido(), request.publicadorUsuarioId(),
-                request.prerequisitoIds(), AuthenticatedUser.currentUserId(), AuthenticatedUser.isAdmin());
+                request.prerequisitoIds(), AuthenticatedUser.currentUserId(), AuthenticatedUser.isAdmin(),
+                request.duracionHoras());
         return ResponseEntity.status(HttpStatus.CREATED).body(aRespuesta(curso));
     }
 
@@ -91,13 +92,13 @@ public class CursoController {
         return aRespuesta(cursoService.obtener(id));
     }
 
-    // HU-08: editar titulo, descripcion, nivel, habilidades, link
+    // HU-08: editar titulo, descripcion, nivel, habilidades, link, duracionHoras
     @Operation(summary = "Editar curso", description = NOTA_DUENO_O_ADMIN)
     @PutMapping("/{id}")
     public CursoResponse editar(@PathVariable Long id, @Valid @RequestBody EditarCursoRequest request) {
         Curso curso = cursoService.editar(id, request.titulo(), request.descripcion(), request.nivel(),
                 request.habilidadIds(), request.linkContenido(),
-                AuthenticatedUser.currentUserId(), AuthenticatedUser.isAdmin());
+                AuthenticatedUser.currentUserId(), AuthenticatedUser.isAdmin(), request.duracionHoras());
         return aRespuesta(curso);
     }
 

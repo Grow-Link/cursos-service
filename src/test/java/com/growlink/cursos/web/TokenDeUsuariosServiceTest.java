@@ -70,6 +70,7 @@ class TokenDeUsuariosServiceTest {
         body.put("habilidadIds", List.of());
         body.put("publicadorUsuarioId", publicadorId);
         body.put("prerequisitoIds", List.of());
+        body.put("duracionHoras", 20);
 
         String respuesta = mockMvc.perform(post("/api/cursos")
                         .header("Authorization", tokenComoUsuariosService(publicadorId, "PUBLICADOR"))
