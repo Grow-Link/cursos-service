@@ -101,6 +101,7 @@ descripción indicando que requieren ser el publicador dueño o tener rol
 | GET | /api/habilidades?categoria=X | Catalogo cerrado de habilidades, filtrable por categoria |
 | POST | /api/roadmap/generar | HU-11: genera y guarda un roadmap para el usuario |
 | GET | /api/roadmap/mio?usuarioId=X | HU-11/HU-05: el roadmap mas reciente del usuario (404 si no tiene) |
+| GET | /api/roadmap/completados?usuarioId=X | CONTRATO con usuarios-service: roadmaps que el usuario ya completo del todo, uno por semilla de jardin (lista vacia si no tiene ninguno) |
 
 ## Catalogo, examenes y control de metas
 
@@ -176,14 +177,40 @@ IA" cuando fue el respaldo. Ojo: el respaldo **no usa las metas** del usuario,
 solo sus intereses y su nivel, las metas solo las lee la IA.
 
 **Solo con tu propio usuario.** `POST /api/roadmap/generar`, `GET
-/api/roadmap/mio`, `POST /api/cursos/{id}/completar` y `GET
-/api/cursos/completados` reciben un `usuarioId`, pero ese dato lo escribe el
-cliente, asi que se compara con el del token y si no coincide responde 403. Un
-ADMIN si puede actuar por otros.
+/api/roadmap/mio`, `GET /api/roadmap/completados`, `POST
+/api/cursos/{id}/completar` y `GET /api/cursos/completados` reciben un
+`usuarioId`, pero ese dato lo escribe el cliente, asi que se compara con el
+del token y si no coincide responde 403. Un ADMIN si puede actuar por otros.
 
 `GET /api/roadmap/mio` devuelve los cursos del roadmap guardado con sus
 prerequisitos reales; con eso el frontend arma el grafo visual (HU-12, ver
 "Roadmap como grafo" en el README de GrowLink-FRONTEND).
+
+**`GET /api/roadmap/completados`** (CONTRATO con usuarios-service, no cambiar
+su forma sin avisar antes): da una semilla de jardin por cada roadmap que esa
+persona ya completo del todo. Generar un roadmap nuevo **nunca borra ni
+reemplaza** los anteriores (cada `POST /api/roadmap/generar` guarda una fila
+nueva en `roadmap`; "mio" solo muestra la mas reciente, ver `Roadmap`), asi
+que un roadmap completado no desaparece aunque la persona genere otro
+despues. Un roadmap cuenta como completado cuando tiene al menos un curso y
+TODOS sus cursos estan en `CursoCompletado` de esa persona (un curso dado de
+baja despues de completarlo sigue contando: la baja es logica y no toca
+`CursoCompletado`). La respuesta, por roadmap completado:
+
+```json
+{ "roadmapId": 5, "categoria": "INGENIERIA_SISTEMAS", "titulo": "...",
+  "totalCursos": 6, "horasTotales": 54, "completadoEn": "2026-10-09T12:00:00Z" }
+```
+
+- `categoria` es la que mas cursos tiene en ese roadmap; en empate, la del
+  curso que aparece primero por `orden`.
+- `titulo` sale de las metas del roadmap, recortado a 80 caracteres sin
+  partir una palabra a la mitad.
+- `horasTotales` suma `duracionHoras` de sus cursos.
+- `completadoEn` es la fecha del ultimo curso completado.
+
+Todo con consultas en bloque (`IN`), nunca una consulta por curso o por
+roadmap (ver `RoadmapService.completados`).
 
 `POST /api/cursos/sugerir-prerequisitos` (body: `categoria`, `nivel`,
 `titulo`, `descripcion?`) reutiliza esta misma infraestructura (mismo
@@ -207,6 +234,14 @@ HU-09 (baja logica y su efecto en el catalogo vs. "mis cursos"), HU-10
 incluyendo que el historial sobrevive a la baja del curso) y HU-11/12
 (roadmap en modo de respaldo, validando que respeta el orden real de
 prerequisitos).
+
+`RoadmapCompletadosTest` cubre `GET /api/roadmap/completados` (con una IA
+falsa para controlar exactamente que cursos entran a cada roadmap, igual que
+`RoadmapRestriccionTest`): roadmap completo, incompleto, sin cursos, de otra
+persona (403), un curso dado de baja que sigue contando, la categoria por
+mayoria y por empate (gana el primero por orden), varios roadmaps del mismo
+usuario (solo cuentan los completos, y generar uno nuevo no borra el
+anterior) y el recorte del titulo a 80 caracteres sin partir una palabra.
 
 ## Despliegue
 

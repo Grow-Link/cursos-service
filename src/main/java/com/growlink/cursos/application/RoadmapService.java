@@ -1,5 +1,6 @@
 package com.growlink.cursos.application;
 
+import com.growlink.cursos.adapter.persistence.CursoCompletadoRepository;
 import com.growlink.cursos.adapter.persistence.CursoPrerequisitoRepository;
 import com.growlink.cursos.adapter.persistence.CursoRepository;
 import com.growlink.cursos.adapter.persistence.PreguntaExamenRepository;
@@ -14,6 +15,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -32,6 +34,7 @@ public class RoadmapService {
     private final RoadmapRepository roadmapRepository;
     private final RoadmapCursoRepository roadmapCursoRepository;
     private final PreguntaExamenRepository preguntaExamenRepository;
+    private final CursoCompletadoRepository completadoRepository;
     private final MetaValidator metaValidator;
     private final FallbackTopologicoRoadmapAiClient fallbackClient;
     private final RoadmapAiClient aiClient;
@@ -41,7 +44,8 @@ public class RoadmapService {
 
     public RoadmapService(CursoRepository cursoRepository, CursoPrerequisitoRepository prerequisitoRepository,
                            RoadmapRepository roadmapRepository, RoadmapCursoRepository roadmapCursoRepository,
-                           PreguntaExamenRepository preguntaExamenRepository, MetaValidator metaValidator,
+                           PreguntaExamenRepository preguntaExamenRepository,
+                           CursoCompletadoRepository completadoRepository, MetaValidator metaValidator,
                            FallbackTopologicoRoadmapAiClient fallbackClient, PropuestaCache propuestaCache,
                            @Value("${roadmap.plan.max-areas:1}") int maxAreas,
                            ObjectProvider<ClaudeRoadmapAiClient> claudeClientProvider) {
@@ -50,6 +54,7 @@ public class RoadmapService {
         this.roadmapRepository = roadmapRepository;
         this.roadmapCursoRepository = roadmapCursoRepository;
         this.preguntaExamenRepository = preguntaExamenRepository;
+        this.completadoRepository = completadoRepository;
         this.metaValidator = metaValidator;
         this.fallbackClient = fallbackClient;
         this.propuestaCache = propuestaCache;
@@ -146,6 +151,79 @@ public class RoadmapService {
         Roadmap roadmap = roadmapRepository.findFirstByUsuarioIdOrderByCreadoEnDesc(usuarioId)
                 .orElseThrow(() -> new RoadmapNoEncontradoException(usuarioId));
         return construirDetalle(roadmap, roadmapCursoRepository.findByRoadmapIdOrderByOrdenAsc(roadmap.getId()));
+    }
+
+    // usuarios-service pregunta esto para dar una semilla de jardin por cada roadmap completado (CONTRATO, ver
+    // RoadmapController). Generar un roadmap nuevo NUNCA borra ni reemplaza los anteriores (ver Roadmap), asi que
+    // uno ya completado no desaparece: se revisan TODOS los roadmaps de la persona, no solo el ultimo ("mio").
+    // Un roadmap cuenta como completado cuando tiene al menos un curso y todos sus cursos estan en
+    // CursoCompletado de esa persona (un curso dado de baja despues de completarlo sigue contando: la baja es
+    // logica y CursoCompletado no se toca, ver Curso.darDeBaja). Todo en consultas de bloque (IN), nunca una
+    // consulta por roadmap o por curso.
+    public List<RoadmapCompletadoDetalle> completados(Long usuarioId) {
+        List<Roadmap> roadmaps = roadmapRepository.findByUsuarioIdOrderByCreadoEnAsc(usuarioId);
+        if (roadmaps.isEmpty()) {
+            return List.of();
+        }
+        List<Long> roadmapIds = roadmaps.stream().map(Roadmap::getId).toList();
+        Map<Long, List<RoadmapCurso>> entradasPorRoadmap = roadmapCursoRepository.findByRoadmapIdIn(roadmapIds)
+                .stream().collect(Collectors.groupingBy(RoadmapCurso::getRoadmapId));
+
+        Set<Long> cursoIds = entradasPorRoadmap.values().stream().flatMap(List::stream)
+                .map(RoadmapCurso::getCursoId).collect(Collectors.toSet());
+        Map<Long, Curso> cursosPorId = cursoRepository.findAllById(cursoIds).stream()
+                .collect(Collectors.toMap(Curso::getId, c -> c));
+        Map<Long, Instant> completadoEnPorCurso = completadoRepository.findByUsuarioId(usuarioId).stream()
+                .collect(Collectors.toMap(CursoCompletado::getCursoId, CursoCompletado::getFecha));
+
+        List<RoadmapCompletadoDetalle> resultado = new ArrayList<>();
+        for (Roadmap roadmap : roadmaps) {
+            List<RoadmapCurso> entradas = entradasPorRoadmap.get(roadmap.getId());
+            if (entradas == null || entradas.isEmpty()) {
+                continue; // sin cursos: no cuenta
+            }
+            if (!entradas.stream().allMatch(e -> completadoEnPorCurso.containsKey(e.getCursoId()))) {
+                continue; // le falta al menos uno
+            }
+            List<RoadmapCurso> porOrden = entradas.stream()
+                    .sorted(Comparator.comparingInt(RoadmapCurso::getOrden)).toList();
+            Instant completadoEn = porOrden.stream().map(e -> completadoEnPorCurso.get(e.getCursoId()))
+                    .max(Comparator.naturalOrder()).orElseThrow();
+            int horasTotales = porOrden.stream().mapToInt(e -> {
+                Curso curso = cursosPorId.get(e.getCursoId());
+                return curso == null || curso.getDuracionHoras() == null ? 0 : curso.getDuracionHoras();
+            }).sum();
+            resultado.add(new RoadmapCompletadoDetalle(roadmap.getId(), categoriaMayoritaria(porOrden, cursosPorId),
+                    roadmap.getMetas(), porOrden.size(), horasTotales, completadoEn));
+        }
+        return resultado;
+    }
+
+    // la categoria con mas cursos del roadmap; en empate, la del curso que aparece primero por orden. Al recorrer
+    // en orden y actualizar solo con un conteo ESTRICTAMENTE mayor, la primera categoria en alcanzar el conteo
+    // final mas alto se queda con el premio aunque otra la empate despues.
+    private Categoria categoriaMayoritaria(List<RoadmapCurso> porOrden, Map<Long, Curso> cursosPorId) {
+        Map<Categoria, Integer> conteo = new HashMap<>();
+        for (RoadmapCurso e : porOrden) {
+            Curso curso = cursosPorId.get(e.getCursoId());
+            if (curso != null) {
+                conteo.merge(curso.getCategoria(), 1, Integer::sum);
+            }
+        }
+        Categoria mejor = null;
+        int mejorConteo = -1;
+        for (RoadmapCurso e : porOrden) {
+            Curso curso = cursosPorId.get(e.getCursoId());
+            if (curso == null) {
+                continue;
+            }
+            int conteoDeEsta = conteo.get(curso.getCategoria());
+            if (conteoDeEsta > mejorConteo) {
+                mejorConteo = conteoDeEsta;
+                mejor = curso.getCategoria();
+            }
+        }
+        return mejor;
     }
 
     // arma lo que la pantalla necesita de cada curso de la ruta: sus datos completos, la razon de que este
