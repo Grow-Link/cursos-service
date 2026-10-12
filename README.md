@@ -170,6 +170,33 @@ de lo que conteste la IA:
 Esto esta probado en `RoadmapRestriccionTest` con una IA simulada que recomienda
 cursos dados de baja, cursos inventados, o falla.
 
+**Que un roadmap nuevo no pueda "ganar" semillas de jardin sin trabajo real
+(anti-farming, parte 1).** El jardin de usuarios-service da una semilla por
+cada roadmap completado (ver `GET /api/roadmap/completados` abajo), asi que
+`RoadmapService.generar` nunca ofrece un curso que esa persona ya completo:
+
+1. Antes de armar el catalogo que se le manda a la IA o al respaldo, se
+   excluyen los cursos que ya estan en `CursoCompletado` de esa persona
+   (`RoadmapService.sinCompletados`). Ni la IA ni el respaldo los ven, asi
+   que no pueden volver a proponerlos.
+2. Un curso completado que era prerequisito de otro queda simplemente afuera
+   de ese catalogo: para quien arma la ruta ya no existe, asi que se trata
+   como cumplido (no bloquea al que lo necesitaba ni rompe el orden
+   topologico). `FallbackTopologicoRoadmapAiClient.conPrerequisitos` ya
+   ignoraba un prerequisito que no encontraba en el catalogo que se le pasa,
+   asi que esto no necesito cambiar ese algoritmo.
+3. Si aun asi la IA real propone un curso ya completado, la validacion de la
+   respuesta lo rechaza (ya no existe en el catalogo disponible que se usa
+   para validar) y se cae al modo de respaldo, igual que con un curso dado
+   de baja o inventado.
+4. Si tras excluir los completados no queda ningun curso en las areas
+   elegidas, se responde 422 con un mensaje distinto al de "todavia no hay
+   cursos de X": "Ya completaste todos los cursos de X".
+
+Probado en `RoadmapAntiFarmingGeneracionTest` (contra el algoritmo de
+respaldo real) y en `RoadmapAntiFarmingTest` (con una IA simulada que insiste
+en proponer un curso ya completado).
+
 **Quien lo genero.** El roadmap guarda `generadoPor`: `IA` solo si Claude contesto
 y la respuesta paso la validacion, y `RESPALDO` en cualquier otro caso (sin llave,
 falla, o respuesta invalida). El frontend lo muestra para no decir "generado por
@@ -192,10 +219,7 @@ persona ya completo del todo. Generar un roadmap nuevo **nunca borra ni
 reemplaza** los anteriores (cada `POST /api/roadmap/generar` guarda una fila
 nueva en `roadmap`; "mio" solo muestra la mas reciente, ver `Roadmap`), asi
 que un roadmap completado no desaparece aunque la persona genere otro
-despues. Un roadmap cuenta como completado cuando tiene al menos un curso y
-TODOS sus cursos estan en `CursoCompletado` de esa persona (un curso dado de
-baja despues de completarlo sigue contando: la baja es logica y no toca
-`CursoCompletado`). La respuesta, por roadmap completado:
+despues. La respuesta, por roadmap completado:
 
 ```json
 { "roadmapId": 5, "categoria": "INGENIERIA_SISTEMAS", "titulo": "...",
@@ -209,8 +233,36 @@ baja despues de completarlo sigue contando: la baja es logica y no toca
 - `horasTotales` suma `duracionHoras` de sus cursos.
 - `completadoEn` es la fecha del ultimo curso completado.
 
+Un roadmap cuenta como completado cuando tiene al menos un curso y, ademas
+de las dos reglas de anti-farming de abajo, TODOS sus cursos estan en
+`CursoCompletado` de esa persona (un curso dado de baja despues de
+completarlo sigue contando: la baja es logica y no toca `CursoCompletado`).
 Todo con consultas en bloque (`IN`), nunca una consulta por curso o por
 roadmap (ver `RoadmapService.completados`).
+
+**Anti-farming, parte 2: que cada curso completado pague como maximo una
+semilla.** La parte 1 (arriba) evita que un roadmap NUEVO vuelva a incluir
+un curso ya completado, pero no alcanza sola: un roadmap viejo (de antes de
+este arreglo, o completado por coincidencia con cursos que ya traia de
+antes) podria contar sin trabajo real, y dos roadmaps distintos con los
+mismos cursos pendientes pagarian doble la primera vez que se completen
+juntos. Por eso, ademas de lo anterior:
+
+1. Un roadmap solo califica si TODOS sus cursos se completaron **despues**
+   de que el roadmap se creo (`CursoCompletado.fecha` posterior a
+   `Roadmap.creadoEn`). Un curso completado antes (en otro roadmap previo, o
+   antes de que existiera la parte 1) no cuenta como trabajo hecho para
+   este roadmap, y esto protege tambien a los roadmaps guardados antes de
+   este arreglo.
+2. Cada curso completado alimenta como maximo UN roadmap. Los roadmaps que
+   pasan el punto 1 se procesan en el orden real en que se completaron
+   (`completadoEn` ascendente); el primero en llegar a un curso se lo queda,
+   y si otro roadmap posterior comparte alguno de esos cursos ya no
+   califica.
+
+Las dos reglas corren sobre los datos que ya se trajeron en bloque (sin
+consultas nuevas): son deterministas y baratas. Probado en
+`RoadmapAntiFarmingTest`.
 
 `POST /api/cursos/sugerir-prerequisitos` (body: `categoria`, `nivel`,
 `titulo`, `descripcion?`) reutiliza esta misma infraestructura (mismo
@@ -242,6 +294,21 @@ persona (403), un curso dado de baja que sigue contando, la categoria por
 mayoria y por empate (gana el primero por orden), varios roadmaps del mismo
 usuario (solo cuentan los completos, y generar uno nuevo no borra el
 anterior) y el recorte del titulo a 80 caracteres sin partir una palabra.
+
+`RoadmapAntiFarmingGeneracionTest` cubre la parte 1 del anti-farming contra
+el algoritmo de **respaldo real** (sin IA falsa): un roadmap nuevo no vuelve
+a ofrecer un curso ya completado, un prerequisito ya completado no bloquea
+al curso que lo necesitaba, y si ya se completo todo lo de las areas
+elegidas se responde 422 con un mensaje propio (distinto del de "no hay
+cursos todavia"). `RoadmapAntiFarmingTest` cubre, con la misma IA falsa que
+`RoadmapRestriccionTest`/`RoadmapCompletadosTest`: una propuesta de la IA
+con un curso ya completado cae al respaldo; un roadmap "viejo" con un curso
+completado antes de crearse no cuenta (se simula insertandolo directo, para
+cubrir tambien los roadmaps guardados antes de este arreglo); dos roadmaps
+con los mismos cursos pendientes, completados juntos, solo dejan contar a
+uno (determinista: gana el que se creo primero); el caso normal (completado
+despues de crearse) sigue devolviendo el formato esperado; y un usuario no
+ve los roadmaps completados de otro.
 
 ## Despliegue
 

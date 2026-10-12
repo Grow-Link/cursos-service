@@ -86,24 +86,44 @@ public class RoadmapService {
     public RoadmapDetalle generar(Long usuarioId, String metas, List<Categoria> intereses, Nivel nivel,
                                   Integer horasPorSemana, Integer semanas) {
         List<CursoGrafoNodo> catalogoActivo = catalogoActivoComoGrafo();
+        List<CursoGrafoNodo> catalogoDisponible = sinCompletados(usuarioId, catalogoActivo);
         ContextoRoadmap contexto = validarEntrada(usuarioId, metas, intereses, nivel, horasPorSemana, semanas,
-                catalogoActivo);
-        return guardar(contexto, generarRutaValidada(catalogoActivo, contexto));
+                catalogoActivo, catalogoDisponible);
+        return guardar(contexto, generarRutaValidada(catalogoDisponible, contexto));
     }
 
     // para sembrar el usuario de demostracion al arrancar: siempre con el respaldo, nunca gasta una llamada a la IA
     @Transactional
     public RoadmapDetalle generarConRespaldo(Long usuarioId, String metas, List<Categoria> intereses, Nivel nivel) {
         List<CursoGrafoNodo> catalogoActivo = catalogoActivoComoGrafo();
-        ContextoRoadmap contexto = validarEntrada(usuarioId, metas, intereses, nivel, null, null, catalogoActivo);
-        PropuestaRoadmap propuesta = fallbackClient.generarRuta(catalogoActivo, contexto);
+        List<CursoGrafoNodo> catalogoDisponible = sinCompletados(usuarioId, catalogoActivo);
+        ContextoRoadmap contexto = validarEntrada(usuarioId, metas, intereses, nivel, null, null, catalogoActivo,
+                catalogoDisponible);
+        PropuestaRoadmap propuesta = fallbackClient.generarRuta(catalogoDisponible, contexto);
         return guardar(contexto, new Generado(propuesta, FuenteRoadmap.RESPALDO));
     }
 
-    // antes de gastar una llamada a la IA: la meta tiene que parecer una frase, y las areas tienen que tener cursos
+    // ANTI-FARMING (parte 1): un roadmap nuevo solo puede ofrecer cursos que esta persona AUN NO completo, para
+    // que no se pueda "ganar" una semilla de jardin re-incluyendo trabajo que ya hizo. Un curso completado que
+    // era prerequisito de otro queda simplemente afuera de este catalogo: para quien arma la ruta (la IA o el
+    // respaldo) ya no existe, asi que no bloquea el orden ni se vuelve a pedir (ver
+    // FallbackTopologicoRoadmapAiClient.conPrerequisitos, que ya ignora un prerequisito que no encuentra en el
+    // catalogo que se le paso).
+    private List<CursoGrafoNodo> sinCompletados(Long usuarioId, List<CursoGrafoNodo> catalogoActivo) {
+        Set<Long> completados = completadoRepository.findByUsuarioId(usuarioId).stream()
+                .map(CursoCompletado::getCursoId).collect(Collectors.toSet());
+        if (completados.isEmpty()) {
+            return catalogoActivo;
+        }
+        return catalogoActivo.stream().filter(c -> !completados.contains(c.cursoId())).toList();
+    }
+
+    // antes de gastar una llamada a la IA: la meta tiene que parecer una frase, y las areas tienen que tener
+    // cursos (catalogoActivo, sin importar completados) que ademas esta persona no haya completado ya
+    // (catalogoDisponible, parte 1 del anti-farming)
     private ContextoRoadmap validarEntrada(Long usuarioId, String metas, List<Categoria> intereses, Nivel nivel,
                                            Integer horasPorSemana, Integer semanas,
-                                           List<CursoGrafoNodo> catalogoActivo) {
+                                           List<CursoGrafoNodo> catalogoActivo, List<CursoGrafoNodo> catalogoDisponible) {
         metaValidator.validar(metas);
         if ((horasPorSemana == null) != (semanas == null)) {
             throw new MetaInvalidaException("Indica las horas por semana y el plazo, o deja el tiempo sin límite.");
@@ -122,6 +142,14 @@ public class RoadmapService {
             if (!conCursos.contains(area)) {
                 throw new MetaNoViableException("Todavía no hay cursos de " + area.etiqueta()
                         + ". Elige otra de las áreas que aparecen disponibles.");
+            }
+        }
+        Set<Categoria> conCursosDisponibles = catalogoDisponible.stream().map(CursoGrafoNodo::categoria)
+                .collect(Collectors.toSet());
+        for (Categoria area : intereses) {
+            if (!conCursosDisponibles.contains(area)) {
+                throw new MetaNoViableException("Ya completaste todos los cursos de " + area.etiqueta()
+                        + ". ¡Bien hecho! Elige otra área, o vuelve cuando se publiquen cursos nuevos.");
             }
         }
         return new ContextoRoadmap(usuarioId, metas.trim().replaceAll("\\s+", " "), List.copyOf(intereses), nivel,
@@ -156,10 +184,16 @@ public class RoadmapService {
     // usuarios-service pregunta esto para dar una semilla de jardin por cada roadmap completado (CONTRATO, ver
     // RoadmapController). Generar un roadmap nuevo NUNCA borra ni reemplaza los anteriores (ver Roadmap), asi que
     // uno ya completado no desaparece: se revisan TODOS los roadmaps de la persona, no solo el ultimo ("mio").
-    // Un roadmap cuenta como completado cuando tiene al menos un curso y todos sus cursos estan en
-    // CursoCompletado de esa persona (un curso dado de baja despues de completarlo sigue contando: la baja es
-    // logica y CursoCompletado no se toca, ver Curso.darDeBaja). Todo en consultas de bloque (IN), nunca una
-    // consulta por roadmap o por curso.
+    // Todo en consultas de bloque (IN), nunca una consulta por roadmap o por curso.
+    //
+    // ANTI-FARMING (parte 2): sin esto, se podrian ganar semillas sin trabajo real de dos formas. Por eso un
+    // roadmap cuenta como completado solo si:
+    //   (a) tiene al menos un curso, y TODOS sus cursos se completaron DESPUES de que el roadmap se creo (un
+    //       curso ya completado antes de generar este roadmap no es trabajo hecho PARA el; esto tambien protege
+    //       a los roadmaps viejos, de antes de la parte 1, que todavia podian incluir cursos ya completados), y
+    //   (b) ninguno de sus cursos ya alimento a OTRO roadmap que se completo antes (cada curso completado paga
+    //       como maximo una semilla): se recorren los candidatos que cumplen (a) en el orden real en que se
+    //       completaron (completadoEn ascendente) y el primero en llegar a cada curso se lo queda.
     public List<RoadmapCompletadoDetalle> completados(Long usuarioId) {
         List<Roadmap> roadmaps = roadmapRepository.findByUsuarioIdOrderByCreadoEnAsc(usuarioId);
         if (roadmaps.isEmpty()) {
@@ -176,27 +210,59 @@ public class RoadmapService {
         Map<Long, Instant> completadoEnPorCurso = completadoRepository.findByUsuarioId(usuarioId).stream()
                 .collect(Collectors.toMap(CursoCompletado::getCursoId, CursoCompletado::getFecha));
 
-        List<RoadmapCompletadoDetalle> resultado = new ArrayList<>();
+        List<CandidatoCompletado> candidatos = new ArrayList<>();
         for (Roadmap roadmap : roadmaps) {
             List<RoadmapCurso> entradas = entradasPorRoadmap.get(roadmap.getId());
             if (entradas == null || entradas.isEmpty()) {
                 continue; // sin cursos: no cuenta
             }
-            if (!entradas.stream().allMatch(e -> completadoEnPorCurso.containsKey(e.getCursoId()))) {
-                continue; // le falta al menos uno
+            Instant completadoEn = completadoEnSiTodosSonPosterioresA(entradas, completadoEnPorCurso, roadmap.getCreadoEn());
+            if (completadoEn != null) {
+                candidatos.add(new CandidatoCompletado(roadmap, entradas, completadoEn));
             }
-            List<RoadmapCurso> porOrden = entradas.stream()
+        }
+
+        // se consume en el orden real de finalizacion: el primer roadmap en completarse se queda con sus cursos
+        candidatos.sort(Comparator.comparing(CandidatoCompletado::completadoEn));
+        Set<Long> cursosYaConsumidos = new HashSet<>();
+        List<RoadmapCompletadoDetalle> resultado = new ArrayList<>();
+        for (CandidatoCompletado candidato : candidatos) {
+            List<Long> susCursoIds = candidato.entradas().stream().map(RoadmapCurso::getCursoId).toList();
+            if (susCursoIds.stream().anyMatch(cursosYaConsumidos::contains)) {
+                continue; // alguno de sus cursos ya le dio la semilla a un roadmap que se completo antes
+            }
+            cursosYaConsumidos.addAll(susCursoIds);
+            List<RoadmapCurso> porOrden = candidato.entradas().stream()
                     .sorted(Comparator.comparingInt(RoadmapCurso::getOrden)).toList();
-            Instant completadoEn = porOrden.stream().map(e -> completadoEnPorCurso.get(e.getCursoId()))
-                    .max(Comparator.naturalOrder()).orElseThrow();
             int horasTotales = porOrden.stream().mapToInt(e -> {
                 Curso curso = cursosPorId.get(e.getCursoId());
                 return curso == null || curso.getDuracionHoras() == null ? 0 : curso.getDuracionHoras();
             }).sum();
-            resultado.add(new RoadmapCompletadoDetalle(roadmap.getId(), categoriaMayoritaria(porOrden, cursosPorId),
-                    roadmap.getMetas(), porOrden.size(), horasTotales, completadoEn));
+            resultado.add(new RoadmapCompletadoDetalle(candidato.roadmap().getId(),
+                    categoriaMayoritaria(porOrden, cursosPorId), candidato.roadmap().getMetas(), porOrden.size(),
+                    horasTotales, candidato.completadoEn()));
         }
         return resultado;
+    }
+
+    private record CandidatoCompletado(Roadmap roadmap, List<RoadmapCurso> entradas, Instant completadoEn) {
+    }
+
+    // null si falta completar algun curso del roadmap, o si alguno se completo en o antes de creadoEn (no cuenta
+    // como trabajo hecho para ESTE roadmap). Si todos califican, la fecha del ultimo completado (completadoEn).
+    private Instant completadoEnSiTodosSonPosterioresA(List<RoadmapCurso> entradas,
+                                                         Map<Long, Instant> completadoEnPorCurso, Instant creadoEn) {
+        Instant masReciente = null;
+        for (RoadmapCurso entrada : entradas) {
+            Instant fecha = completadoEnPorCurso.get(entrada.getCursoId());
+            if (fecha == null || !fecha.isAfter(creadoEn)) {
+                return null;
+            }
+            if (masReciente == null || fecha.isAfter(masReciente)) {
+                masReciente = fecha;
+            }
+        }
+        return masReciente;
     }
 
     // la categoria con mas cursos del roadmap; en empate, la del curso que aparece primero por orden. Al recorrer
@@ -268,30 +334,31 @@ public class RoadmapService {
                 .toList();
     }
 
-    private Generado generarRutaValidada(List<CursoGrafoNodo> catalogoActivo, ContextoRoadmap contexto) {
+    private Generado generarRutaValidada(List<CursoGrafoNodo> catalogoDisponible, ContextoRoadmap contexto) {
         // sin llave de Claude, aiClient ya es el respaldo: eso nunca se cuenta como IA
         boolean hayIa = aiClient != fallbackClient;
         if (!hayIa) {
-            return resolverRuta(catalogoActivo, contexto, null, false);
+            return resolverRuta(catalogoDisponible, contexto, null, false);
         }
         // si llegan dos peticiones IGUALES a la vez, la segunda espera a la primera y luego reutiliza su propuesta:
         // una sola llamada a la IA en vez de dos. Peticiones distintas no se esperan entre si (salvo choque raro de cerrojo).
-        String clave = claveDe(contexto, catalogoActivo);
+        String clave = claveDe(contexto, catalogoDisponible);
         synchronized (cerrojos[Math.floorMod(clave.hashCode(), CERROJOS)]) {
-            return resolverRuta(catalogoActivo, contexto, clave, true);
+            return resolverRuta(catalogoDisponible, contexto, clave, true);
         }
     }
 
-    private Generado resolverRuta(List<CursoGrafoNodo> catalogoActivo, ContextoRoadmap contexto, String clave,
+    private Generado resolverRuta(List<CursoGrafoNodo> catalogoDisponible, ContextoRoadmap contexto, String clave,
                                   boolean hayIa) {
         Integer presupuesto = contexto.presupuestoHoras();
 
-        // DETERMINISMO: si ya le preguntamos esto mismo a la IA (misma meta, areas, nivel, tiempo y catalogo), se
-        // reutiliza su propuesta validada en vez de volver a preguntar; la IA por si sola puede contestar distinto
+        // DETERMINISMO: si ya le preguntamos esto mismo a la IA (misma meta, areas, nivel, tiempo y catalogo
+        // disponible, que ya excluye lo que esta persona completo), se reutiliza su propuesta validada en vez
+        // de volver a preguntar; la IA por si sola puede contestar distinto
         if (clave != null) {
             Optional<PropuestaRoadmap> guardada = propuestaCache.buscar(clave);
-            if (guardada.isPresent() && esPropuestaValida(guardada.get(), catalogoActivo)
-                    && (presupuesto == null || horasDe(guardada.get(), catalogoActivo) <= presupuesto)) {
+            if (guardada.isPresent() && esPropuestaValida(guardada.get(), catalogoDisponible)
+                    && (presupuesto == null || horasDe(guardada.get(), catalogoDisponible) <= presupuesto)) {
                 log.info("Roadmap: se reutiliza la propuesta de la IA ya guardada para esta misma entrada");
                 return new Generado(guardada.get(), FuenteRoadmap.IA);
             }
@@ -299,16 +366,16 @@ public class RoadmapService {
 
         PropuestaRoadmap propuesta;
         try {
-            propuesta = aiClient.generarRuta(catalogoActivo, contexto);
+            propuesta = aiClient.generarRuta(catalogoDisponible, contexto);
         } catch (RoadmapAiException e) {
             // OJO: si la IA dijo que la meta no es viable (MetaNoViableException) NO se cae al respaldo,
             // se le explica a la persona. El respaldo solo entra cuando la IA fallo, no cuando dijo que no
             log.warn("Fallo la IA generando el roadmap, se usa el modo de respaldo: {}", e.getMessage());
-            return new Generado(fallbackClient.generarRuta(catalogoActivo, contexto), FuenteRoadmap.RESPALDO);
+            return new Generado(fallbackClient.generarRuta(catalogoDisponible, contexto), FuenteRoadmap.RESPALDO);
         }
 
-        if (esPropuestaValida(propuesta, catalogoActivo)) {
-            int horas = horasDe(propuesta, catalogoActivo);
+        if (esPropuestaValida(propuesta, catalogoDisponible)) {
+            int horas = horasDe(propuesta, catalogoDisponible);
             if (presupuesto == null || horas <= presupuesto) {
                 return deLaIa(clave, propuesta, hayIa);
             }
@@ -316,10 +383,10 @@ public class RoadmapService {
             log.warn("La ruta de la IA suma {} h y el tope es {} h", horas, presupuesto);
             if (hayIa) {
                 try {
-                    PropuestaRoadmap corregida = aiClient.generarRuta(catalogoActivo, contexto.conCorreccion(
+                    PropuestaRoadmap corregida = aiClient.generarRuta(catalogoDisponible, contexto.conCorreccion(
                             "Tu propuesta anterior sumaba " + horas + " horas y el tope es " + presupuesto
                                     + ". Devuelve una ruta nueva que sume " + presupuesto + " horas o menos."));
-                    if (esPropuestaValida(corregida, catalogoActivo) && horasDe(corregida, catalogoActivo) <= presupuesto) {
+                    if (esPropuestaValida(corregida, catalogoDisponible) && horasDe(corregida, catalogoDisponible) <= presupuesto) {
                         return deLaIa(clave, corregida, true);
                     }
                 } catch (RoadmapAiException e) {
@@ -327,11 +394,12 @@ public class RoadmapService {
                 }
             }
             log.warn("Se usa el modo de respaldo, que arma la ruta dentro del tiempo");
-            return new Generado(fallbackClient.generarRuta(catalogoActivo, contexto), FuenteRoadmap.RESPALDO);
+            return new Generado(fallbackClient.generarRuta(catalogoDisponible, contexto), FuenteRoadmap.RESPALDO);
         }
-        log.warn("La respuesta de la IA no es un subconjunto valido del catalogo/prerequisitos reales, "
+        log.warn("La respuesta de la IA no es un subconjunto valido del catalogo disponible/prerequisitos reales "
+                + "(incluye algo inventado, repetido, dado de baja o ya completado por esta persona), "
                 + "se usa el modo de respaldo");
-        return new Generado(fallbackClient.generarRuta(catalogoActivo, contexto), FuenteRoadmap.RESPALDO);
+        return new Generado(fallbackClient.generarRuta(catalogoDisponible, contexto), FuenteRoadmap.RESPALDO);
     }
 
     // una propuesta de la IA que paso la validacion: se guarda (solo las de la IA; lo que sale del respaldo no se
@@ -349,13 +417,14 @@ public class RoadmapService {
         return new Generado(propuesta, hayIa ? FuenteRoadmap.IA : FuenteRoadmap.RESPALDO);
     }
 
-    // hash de TODO lo que influye en la respuesta de la IA: si algo cambia (hasta un curso nuevo o editado), cambia la clave
-    private String claveDe(ContextoRoadmap contexto, List<CursoGrafoNodo> catalogoActivo) {
+    // hash de TODO lo que influye en la respuesta de la IA: si algo cambia (hasta un curso nuevo o editado, o
+    // que esta persona complete un curso que antes estaba disponible), cambia la clave
+    private String claveDe(ContextoRoadmap contexto, List<CursoGrafoNodo> catalogoDisponible) {
         StringBuilder sb = new StringBuilder("v4|"); // sube al cambiar el prompt: asi no se reutilizan propuestas viejas
         sb.append(TextoUtil.normalizar(contexto.metas()).replaceAll("[^a-z0-9+# ]+", " ").replaceAll("\\s+", " ").trim()).append('|');
         contexto.intereses().stream().map(Enum::name).sorted().forEach(a -> sb.append(a).append(','));
         sb.append('|').append(contexto.nivel()).append('|').append(contexto.presupuestoHoras()).append('|');
-        catalogoActivo.stream().sorted(Comparator.comparing(CursoGrafoNodo::cursoId)).forEach(c -> sb
+        catalogoDisponible.stream().sorted(Comparator.comparing(CursoGrafoNodo::cursoId)).forEach(c -> sb
                 .append(c.cursoId()).append(':').append(c.titulo()).append(':').append(c.categoria()).append(':')
                 .append(c.nivel()).append(':').append(c.duracionHoras()).append(':')
                 .append(c.prerequisitoIds().stream().sorted().toList()).append(':')
@@ -370,23 +439,25 @@ public class RoadmapService {
     }
 
     // lo que suma la ruta propuesta, con las horas reales del catalogo (nunca las que diga la IA)
-    private int horasDe(PropuestaRoadmap propuesta, List<CursoGrafoNodo> catalogoActivo) {
-        Map<Long, CursoGrafoNodo> porId = catalogoActivo.stream()
+    private int horasDe(PropuestaRoadmap propuesta, List<CursoGrafoNodo> catalogoDisponible) {
+        Map<Long, CursoGrafoNodo> porId = catalogoDisponible.stream()
                 .collect(Collectors.toMap(CursoGrafoNodo::cursoId, c -> c));
         return propuesta.ids().stream().map(porId::get).filter(Objects::nonNull)
                 .mapToInt(c -> c.duracionHoras() == null ? 0 : c.duracionHoras()).sum();
     }
 
-    // nunca se guarda un roadmap con cursos o relaciones inventadas: todo id
-    // debe existir en el catalogo activo (un curso dado de baja no esta ahi), sin repetidos,
-    // y cada curso debe aparecer despues de sus prerequisitos (los que tambien esten en la ruta)
-    private boolean esPropuestaValida(PropuestaRoadmap propuesta, List<CursoGrafoNodo> catalogoActivo) {
+    // nunca se guarda un roadmap con cursos o relaciones inventadas: todo id debe existir en el catalogo
+    // DISPONIBLE (un curso dado de baja no esta ahi, y TAMPOCO uno que esta persona ya completo, ver
+    // sinCompletados: eso rechaza de una cualquier propuesta de la IA que incluya un curso ya hecho, sin
+    // necesidad de revisarlo aparte), sin repetidos, y cada curso debe aparecer despues de sus prerequisitos
+    // (los que tambien esten en la ruta; uno que ya se completo no esta en este catalogo asi que no exige nada)
+    private boolean esPropuestaValida(PropuestaRoadmap propuesta, List<CursoGrafoNodo> catalogoDisponible) {
         if (propuesta == null || propuesta.cursos() == null || propuesta.cursos().isEmpty()
                 || propuesta.cursos().size() > MAX_CURSOS_EN_RUTA) {
             return false;
         }
         List<Long> orden = propuesta.ids();
-        Map<Long, CursoGrafoNodo> porId = catalogoActivo.stream()
+        Map<Long, CursoGrafoNodo> porId = catalogoDisponible.stream()
                 .collect(Collectors.toMap(CursoGrafoNodo::cursoId, c -> c));
 
         if (new HashSet<>(orden).size() != orden.size()) {
