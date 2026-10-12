@@ -26,7 +26,7 @@ public class RoadmapController {
     public ResponseEntity<RoadmapResponse> generar(@Valid @RequestBody RoadmapGenerarRequest request) {
         AuthenticatedUser.exigirPropio(request.usuarioId());
         var detalle = roadmapService.generar(request.usuarioId(), request.metas(), request.intereses(),
-                request.nivel());
+                request.nivel(), request.horasPorSemana(), request.semanas());
         return ResponseEntity.status(HttpStatus.CREATED).body(RoadmapResponse.from(detalle));
     }
 

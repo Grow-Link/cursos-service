@@ -14,7 +14,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ClaudeRoadmapAiClientTest {
 
     private final ClaudeRoadmapAiClient cliente =
-            new ClaudeRoadmapAiClient("llave-de-prueba", "claude-sonnet-5-5", new ObjectMapper());
+            new ClaudeRoadmapAiClient("llave-de-prueba", "claude-sonnet-5-5", 0.0, new ObjectMapper());
 
     @Test
     void leeLosIdsDeUnaRespuestaSimple() {

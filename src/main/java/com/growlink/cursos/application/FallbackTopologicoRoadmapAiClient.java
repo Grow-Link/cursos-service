@@ -12,11 +12,18 @@ import java.util.stream.Collectors;
 // curso de las areas que la persona eligio, se queda con los que coinciden, les suma los prerequisitos que
 // necesitan y los ordena con Kahn (ordenacion topologica) usando los prerequisitos reales.
 // Si ningun curso coincide con la meta, no inventa una ruta: dice que no puede (MetaNoViableException).
+// Si la persona tiene un tope de horas, va sumando los cursos del que mas coincide con su meta al que menos y se
+// queda solo con los que caben (contando sus prerequisitos); si ninguno cabe, lo dice en vez de armar algo imposible.
+// Es DETERMINISTA: la misma entrada y el mismo catalogo dan siempre la misma ruta (los empates se rompen por id).
 @Component
 public class FallbackTopologicoRoadmapAiClient implements RoadmapAiClient {
 
     // maximo de cursos que coinciden con la meta; con sus prerequisitos la ruta queda en unos 6 a 10
     private static final int MAX_CURSOS_POR_META = 5;
+
+    // la ruta de unos cursos elegidos: ellos mas los prerequisitos que necesitan
+    private record Ruta(Set<Long> ids, Map<Long, Long> necesitadoPor) {
+    }
 
     @Override
     public PropuestaRoadmap generarRuta(List<CursoGrafoNodo> catalogoActivo, ContextoRoadmap contexto) {
@@ -42,33 +49,48 @@ public class FallbackTopologicoRoadmapAiClient implements RoadmapAiClient {
                     + ". Prueba con otras palabras o elige otra área de las que aparecen disponibles.");
         }
 
+        // los que mas coinciden primero; entre iguales, el mas basico y, si siguen iguales, el de menor id
         List<Long> elegidos = puntajes.entrySet().stream()
                 .sorted(Comparator.comparingInt((Map.Entry<Long, Puntaje> e) -> -e.getValue().valor)
-                        .thenComparingInt(e -> porId.get(e.getKey()).nivel().ordinal()))
+                        .thenComparingInt(e -> porId.get(e.getKey()).nivel().ordinal())
+                        .thenComparingLong(Map.Entry::getKey))
                 .limit(MAX_CURSOS_POR_META)
                 .map(Map.Entry::getKey)
-                .toList();
+                .collect(Collectors.toCollection(ArrayList::new));
 
         // 2) los prerequisitos que esos cursos necesitan (los que son de un nivel menor al de la persona se
         // dan por sabidos y no se le ponen en la ruta)
-        Map<Long, Long> necesitadoPor = new LinkedHashMap<>(); // prerequisito -> curso que lo necesita
-        Deque<Long> porRevisar = new ArrayDeque<>(elegidos);
-        Set<Long> enRuta = new LinkedHashSet<>(elegidos);
-        while (!porRevisar.isEmpty()) {
-            Long actual = porRevisar.poll();
-            for (Long prerequisito : porId.get(actual).prerequisitoIds()) {
-                CursoGrafoNodo nodo = porId.get(prerequisito);
-                if (nodo == null || enRuta.contains(prerequisito) || nodo.nivel().ordinal() < contexto.nivel().ordinal()) {
-                    continue;
+        Ruta ruta = conPrerequisitos(elegidos, porId, contexto.nivel());
+
+        // 2b) si tiene un tope de horas: del que mas coincide al que menos, se acepta cada curso solo si la ruta
+        // (con sus prerequisitos) sigue cabiendo
+        Integer presupuesto = contexto.presupuestoHoras();
+        boolean primerTramo = false;
+        if (presupuesto != null) {
+            List<Long> aceptados = new ArrayList<>();
+            Ruta quepa = null;
+            int minimo = Integer.MAX_VALUE;
+            for (Long candidato : elegidos) {
+                minimo = Math.min(minimo, horasDe(conPrerequisitos(List.of(candidato), porId, contexto.nivel()).ids(), porId));
+                List<Long> prueba = new ArrayList<>(aceptados);
+                prueba.add(candidato);
+                Ruta r = conPrerequisitos(prueba, porId, contexto.nivel());
+                if (horasDe(r.ids(), porId) <= presupuesto) {
+                    aceptados = prueba;
+                    quepa = r;
                 }
-                enRuta.add(prerequisito);
-                necesitadoPor.put(prerequisito, actual);
-                porRevisar.add(prerequisito);
             }
+            if (quepa == null) {
+                throw new MetaNoViableException("Con tu tiempo disponible (" + presupuesto + " horas) no alcanza ni para "
+                        + "empezar esta ruta: lo mínimo relacionado con tu meta son " + minimo + " horas. Dedícale más "
+                        + "horas por semana, elige un plazo más largo o quita el límite de tiempo.");
+            }
+            ruta = quepa;
+            primerTramo = aceptados.size() < elegidos.size();
         }
 
         // 3) orden: primero lo que es base de otros, y entre iguales lo mas basico
-        List<Long> orden = ordenTopologico(enRuta, porId, puntajes);
+        List<Long> orden = ordenTopologico(ruta.ids(), porId, puntajes);
 
         List<CursoElegido> cursos = new ArrayList<>();
         for (Long id : orden) {
@@ -77,16 +99,41 @@ public class FallbackTopologicoRoadmapAiClient implements RoadmapAiClient {
             if (p != null && !p.coincidencias.isEmpty()) {
                 razon = "Coincide con tu meta (" + String.join(", ", p.coincidencias) + ").";
             } else {
-                razon = "Es la base que necesitas para «" + porId.get(necesitadoPor.get(id)).titulo() + "».";
+                razon = "Es la base que necesitas para «" + porId.get(ruta.necesitadoPor().get(id)).titulo() + "».";
             }
             cursos.add(new CursoElegido(id, razon));
         }
 
-        int horas = orden.stream().map(porId::get).mapToInt(c -> c.duracionHoras() == null ? 0 : c.duracionHoras()).sum();
-        String resumen = "Ruta de " + orden.size() + " cursos" + (horas > 0 ? " (unas " + horas + " horas)" : "")
+        int horas = horasDe(new HashSet<>(orden), porId);
+        String resumen = (primerTramo ? "Primer tramo de tu ruta, lo que cabe en tu tiempo: " : "Ruta de ")
+                + orden.size() + (orden.size() == 1 ? " curso" : " cursos")
+                + (horas > 0 ? " (unas " + horas + " horas" + (presupuesto != null ? " de las " + presupuesto + " que tienes" : "") + ")" : "")
                 + " armada con los cursos de la plataforma que coinciden con tu meta, ordenados para que cada uno "
                 + "te prepare para el siguiente. Empieza por «" + porId.get(orden.get(0)).titulo() + "».";
         return new PropuestaRoadmap(cursos, resumen);
+    }
+
+    private Ruta conPrerequisitos(List<Long> elegidos, Map<Long, CursoGrafoNodo> porId, Nivel nivelPersona) {
+        Map<Long, Long> necesitadoPor = new LinkedHashMap<>(); // prerequisito -> curso que lo necesita
+        Deque<Long> porRevisar = new ArrayDeque<>(elegidos);
+        Set<Long> enRuta = new LinkedHashSet<>(elegidos);
+        while (!porRevisar.isEmpty()) {
+            Long actual = porRevisar.poll();
+            for (Long prerequisito : porId.get(actual).prerequisitoIds()) {
+                CursoGrafoNodo nodo = porId.get(prerequisito);
+                if (nodo == null || enRuta.contains(prerequisito) || nodo.nivel().ordinal() < nivelPersona.ordinal()) {
+                    continue;
+                }
+                enRuta.add(prerequisito);
+                necesitadoPor.put(prerequisito, actual);
+                porRevisar.add(prerequisito);
+            }
+        }
+        return new Ruta(enRuta, necesitadoPor);
+    }
+
+    private int horasDe(Set<Long> ids, Map<Long, CursoGrafoNodo> porId) {
+        return ids.stream().map(porId::get).mapToInt(c -> c.duracionHoras() == null ? 0 : c.duracionHoras()).sum();
     }
 
     private static class Puntaje {

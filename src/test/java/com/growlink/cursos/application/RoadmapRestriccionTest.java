@@ -46,16 +46,21 @@ class RoadmapRestriccionTest {
     // reemplaza al cliente real de Claude: no sale a internet, contesta lo que cada prueba le diga
     static class IaFalsa extends ClaudeRoadmapAiClient {
         volatile Function<List<CursoGrafoNodo>, List<Long>> decide = catalogo -> List.of();
+        // si se define, decide mirando tambien el contexto (por ejemplo, si trae una correccion de tiempo)
+        volatile java.util.function.BiFunction<List<CursoGrafoNodo>, ContextoRoadmap, List<Long>> decideConContexto = null;
         volatile List<Long> ultimoCatalogoVisto = List.of();
+        volatile int llamadas = 0;
 
         IaFalsa() {
-            super("llave-falsa", "modelo-falso", new ObjectMapper());
+            super("llave-falsa", "modelo-falso", 0.0, new ObjectMapper());
         }
 
         @Override
         public PropuestaRoadmap generarRuta(List<CursoGrafoNodo> catalogoActivo, ContextoRoadmap contexto) {
             ultimoCatalogoVisto = catalogoActivo.stream().map(CursoGrafoNodo::cursoId).toList();
-            List<CursoElegido> cursos = decide.apply(catalogoActivo).stream()
+            llamadas++;
+            List<Long> ids = decideConContexto != null ? decideConContexto.apply(catalogoActivo, contexto) : decide.apply(catalogoActivo);
+            List<CursoElegido> cursos = ids.stream()
                     .map(id -> new CursoElegido(id, "razon de prueba")).toList();
             return new PropuestaRoadmap(cursos, "resumen de prueba");
         }
@@ -80,6 +85,8 @@ class RoadmapRestriccionTest {
     @BeforeEach
     void iaPorDefecto() {
         ia.decide = catalogo -> List.of();
+        ia.decideConContexto = null;
+        ia.llamadas = 0;
     }
 
     @Test
@@ -153,6 +160,146 @@ class RoadmapRestriccionTest {
         assertThat(idsDelRoadmap(roadmap)).isNotEmpty();
     }
 
+    // ---------------------------------------------------------- el tiempo disponible
+
+    @Test
+    void siLaIaSePasaDelTiempoSeLeCorrigeUnaVezYSiNoCorrigeSeUsaElRespaldo() throws Exception {
+        crearCurso("Derecho de Familia I", 7010L);
+        crearCurso("Derecho de Familia II", 7010L);
+        crearCurso("Derecho de Familia III", 7010L);
+
+        // una IA terca: siempre devuelve 4 cursos de Derecho (80 h), sin importar el tope (cada curso son 20 h)
+        ia.decide = catalogo -> catalogo.stream().filter(c -> c.categoria().name().equals("DERECHO"))
+                .map(CursoGrafoNodo::cursoId).limit(4).toList();
+
+        JsonNode roadmap = generarConTiempo(7110L, 2, 15, 201); // 2 h x 15 semanas = 30 h
+
+        assertThat(ia.llamadas).as("una llamada normal y una sola de correccion").isEqualTo(2);
+        assertThat(roadmap.get("generadoPor").asText()).isEqualTo("RESPALDO");
+        assertThat(roadmap.get("horasTotales").asInt()).isLessThanOrEqualTo(30).isGreaterThan(0);
+        assertThat(roadmap.get("presupuestoHoras").asInt()).isEqualTo(30);
+    }
+
+    @Test
+    void siLaIaCorrigeElTiempoSeQuedaConSuRutaYSeMarcaComoIa() throws Exception {
+        Long uno = crearCurso("Derecho Minero I", 7011L);
+        crearCurso("Derecho Minero II", 7011L);
+        crearCurso("Derecho Minero III", 7011L);
+
+        // la primera vez se pasa; cuando le avisan del tope, devuelve un solo curso (20 h)
+        ia.decideConContexto = (catalogo, contexto) -> contexto.correccion() == null
+                ? catalogo.stream().filter(c -> c.categoria().name().equals("DERECHO")).map(CursoGrafoNodo::cursoId).limit(4).toList()
+                : List.of(uno);
+
+        JsonNode roadmap = generarConTiempo(7111L, 2, 15, 201);
+
+        assertThat(ia.llamadas).isEqualTo(2);
+        assertThat(roadmap.get("generadoPor").asText()).isEqualTo("IA");
+        assertThat(idsDelRoadmap(roadmap)).containsExactly(uno);
+        assertThat(roadmap.get("horasTotales").asInt()).isEqualTo(20);
+    }
+
+    @Test
+    void siLaIaYaRespetaElTiempoNoSeLeVuelveAPreguntar() throws Exception {
+        Long uno = crearCurso("Derecho Aduanero I", 7012L);
+        ia.decide = catalogo -> List.of(uno);
+
+        JsonNode roadmap = generarConTiempo(7112L, 5, 8, 201); // 40 h, sobra
+
+        assertThat(ia.llamadas).isEqualTo(1);
+        assertThat(roadmap.get("generadoPor").asText()).isEqualTo("IA");
+    }
+
+    // ---------------------------------------------------------- determinismo: la misma entrada, la misma ruta
+
+    @Test
+    void laMismaEntradaNoVuelveAPreguntarleALaIaYDaLaMismaRuta() throws Exception {
+        crearCurso("Derecho Marítimo I", 7020L);
+        crearCurso("Derecho Marítimo II", 7020L);
+        crearCurso("Derecho Marítimo III", 7020L);
+        // una IA "caprichosa": cada vez que se le pregunta contesta una ruta distinta
+        java.util.concurrent.atomic.AtomicInteger vez = new java.util.concurrent.atomic.AtomicInteger();
+        ia.decide = catalogo -> {
+            List<Long> derecho = catalogo.stream().filter(c -> c.categoria().name().equals("DERECHO"))
+                    .map(CursoGrafoNodo::cursoId).sorted().toList();
+            return List.of(derecho.get(vez.getAndIncrement() % 2 == 0 ? derecho.size() - 1 : 0));
+        };
+
+        JsonNode primero = generar(7120L, 7120L, 201);
+        JsonNode segundo = generar(7121L, 7121L, 201); // otra persona, exactamente la misma entrada
+        JsonNode tercero = generar(7122L, 7122L, 201);
+
+        assertThat(ia.llamadas).as("la IA se consulta una sola vez").isEqualTo(1);
+        assertThat(idsDelRoadmap(segundo)).containsExactlyElementsOf(idsDelRoadmap(primero));
+        assertThat(idsDelRoadmap(tercero)).containsExactlyElementsOf(idsDelRoadmap(primero));
+        assertThat(segundo.get("generadoPor").asText()).isEqualTo("IA");
+        assertThat(segundo.get("cursos").get(0).get("razon").asText()).isEqualTo("razon de prueba");
+    }
+
+    @Test
+    void siElCatalogoCambiaSeLeVuelveAPreguntarALaIa() throws Exception {
+        crearCurso("Derecho Agrario I", 7021L);
+        ia.decide = catalogo -> catalogo.stream().filter(c -> c.categoria().name().equals("DERECHO"))
+                .map(CursoGrafoNodo::cursoId).limit(2).toList();
+
+        generar(7123L, 7123L, 201);
+        assertThat(ia.llamadas).isEqualTo(1);
+
+        crearCurso("Derecho Agrario II", 7021L); // un curso nuevo cambia el catalogo, y con eso la clave
+        generar(7124L, 7124L, 201);
+        assertThat(ia.llamadas).as("catalogo distinto: se pregunta de nuevo").isEqualTo(2);
+    }
+
+    @Test
+    void loQueSaleDelRespaldoNoSeGuardaComoSiFueraDeLaIa() throws Exception {
+        crearCurso("Derecho Notarial I", 7022L);
+        ia.decide = catalogo -> {
+            throw new RoadmapAiException("simulacro: Claude no contesto");
+        };
+        assertThat(generar(7125L, 7125L, 201).get("generadoPor").asText()).isEqualTo("RESPALDO");
+
+        // la IA se recupera: la misma entrada ahora SI la responde la IA (no se queda pegada la respuesta de emergencia)
+        ia.decide = catalogo -> catalogo.stream().filter(c -> c.categoria().name().equals("DERECHO"))
+                .map(CursoGrafoNodo::cursoId).limit(1).toList();
+        assertThat(generar(7126L, 7126L, 201).get("generadoPor").asText()).isEqualTo("IA");
+    }
+
+    @Test
+    void dosPeticionesIgualesALaVezLeCuestanUnaSolaLlamadaALaIa() throws Exception {
+        crearCurso("Derecho Portuario I", 7030L);
+        crearCurso("Derecho Portuario II", 7030L);
+        // una IA lenta: mientras contesta, las otras peticiones iguales tienen que esperar y reutilizar su respuesta
+        ia.decide = catalogo -> {
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            return catalogo.stream().filter(c -> c.categoria().name().equals("DERECHO")).map(CursoGrafoNodo::cursoId).limit(2).toList();
+        };
+
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(5);
+        try {
+            List<java.util.concurrent.Future<JsonNode>> trabajos = new java.util.ArrayList<>();
+            for (long usuario = 7140L; usuario < 7145L; usuario++) {
+                long u = usuario;
+                trabajos.add(pool.submit(() -> generar(u, u, 201)));
+            }
+            List<Long> primera = null;
+            for (var trabajo : trabajos) {
+                List<Long> ids = idsDelRoadmap(trabajo.get(30, java.util.concurrent.TimeUnit.SECONDS));
+                if (primera == null) {
+                    primera = ids;
+                }
+                assertThat(ids).containsExactlyElementsOf(primera);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(ia.llamadas).as("cinco peticiones iguales, una sola llamada a la IA").isEqualTo(1);
+    }
+
     @Test
     void elRoadmapGuardadoTambienDiceQuienLoGenero() throws Exception {
         crearCurso("Derecho Tributario I", 7005L);
@@ -212,6 +359,23 @@ class RoadmapRestriccionTest {
                 .andExpect(status().is(estadoEsperado))
                 .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
         return respuesta.isBlank() ? objectMapper.createObjectNode() : objectMapper.readTree(respuesta);
+    }
+
+    private JsonNode generarConTiempo(long usuarioId, int horasPorSemana, int semanas, int estadoEsperado) throws Exception {
+        Map<String, Object> cuerpo = new HashMap<>();
+        cuerpo.put("usuarioId", usuarioId);
+        cuerpo.put("metas", "Quiero trabajar en derecho");
+        cuerpo.put("intereses", List.of("DERECHO"));
+        cuerpo.put("nivel", "PRINCIPIANTE");
+        cuerpo.put("horasPorSemana", horasPorSemana);
+        cuerpo.put("semanas", semanas);
+        String respuesta = mockMvc.perform(post("/api/roadmap/generar")
+                        .header("Authorization", token(usuarioId, "STUDENT"))
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(cuerpo)))
+                .andExpect(status().is(estadoEsperado))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        return objectMapper.readTree(respuesta);
     }
 
     private List<Long> idsDelRoadmap(JsonNode roadmap) {

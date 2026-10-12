@@ -41,12 +41,17 @@ public class Roadmap {
     @Column(length = 300)
     private String intereses;
 
+    // el tiempo con el que se armo la ruta (null si la persona no puso limite)
+    private Integer horasPorSemana;
+
+    private Integer semanas;
+
     protected Roadmap() {
         // JPA
     }
 
     public Roadmap(Long usuarioId, String metas, Nivel nivel, FuenteRoadmap generadoPor, String resumen,
-                   String intereses) {
+                   String intereses, Integer horasPorSemana, Integer semanas) {
         this.usuarioId = usuarioId;
         this.metas = metas;
         this.nivel = nivel;
@@ -54,6 +59,16 @@ public class Roadmap {
         this.generadoPor = generadoPor;
         this.resumen = resumen;
         this.intereses = intereses;
+        this.horasPorSemana = horasPorSemana;
+        this.semanas = semanas;
+    }
+
+    public Integer getHorasPorSemana() {
+        return horasPorSemana;
+    }
+
+    public Integer getSemanas() {
+        return semanas;
     }
 
     public String getResumen() {

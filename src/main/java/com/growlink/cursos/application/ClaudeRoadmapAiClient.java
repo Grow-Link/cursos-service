@@ -35,12 +35,17 @@ public class ClaudeRoadmapAiClient implements RoadmapAiClient {
     private final ObjectMapper objectMapper;
     private final String apiKey;
     private final String model;
+    private final Double temperatura;
 
     public ClaudeRoadmapAiClient(@Value("${CLAUDE_API_KEY:}") String apiKey,
                                   @Value("${roadmap.ai.model:claude-sonnet-5-5}") String model,
+                                  @Value("${roadmap.ai.temperature:#{null}}") Double temperatura,
                                   ObjectMapper objectMapper) {
         this.apiKey = apiKey;
         this.model = model;
+        // OJO: los modelos nuevos de Claude responden 400 ("temperature is deprecated") si se les manda este
+        // parametro, asi que por defecto NO se manda. La repetibilidad se logra con PropuestaCache, no con esto.
+        this.temperatura = temperatura;
         this.objectMapper = objectMapper;
         // sin tiempos limite, si Claude se queda pensando la peticion del usuario se quedaria colgada
         var requestFactory = new SimpleClientHttpRequestFactory();
@@ -79,13 +84,14 @@ public class ClaudeRoadmapAiClient implements RoadmapAiClient {
                 - areas que eligio: %s
                 - nivel actual en esas areas: %s
                 - meta: <meta>%s</meta>
+                - tiempo disponible: %s
 
                 REGLAS:
                 1. Usa unicamente ids que existan en el catalogo. Nunca inventes cursos, horas ni prerequisitos.
                 2. Si la meta no tiene que ver con lo que ofrece el catalogo en las areas elegidas, o no se entiende como una
                    meta de aprendizaje, responde "viable": false y explica en "motivo" (maximo 200 caracteres, amable, en espanol)
                    que puede escribir otra meta o elegir otra area. No armes una ruta "por defecto".
-                3. Si es viable, elige entre 3 y 8 cursos que lleven a la persona hacia su meta, empezando por su nivel actual
+                3. Si es viable, elige entre 3 y 8 cursos (menos solo si el tiempo no alcanza) que lleven a la persona hacia su meta, empezando por su nivel actual
                    (no pongas cursos de un nivel menor al suyo salvo que sean imprescindibles) y avanzando hacia la meta.
                    Incluye los prerequisitos necesarios que sean de su nivel o superior.
                 4. Prioriza los cursos de las areas que eligio; usa cursos de otras areas solo si son prerequisito o aportan
@@ -94,14 +100,42 @@ public class ClaudeRoadmapAiClient implements RoadmapAiClient {
                 6. Para cada curso escribe "razon": una frase de maximo 140 caracteres, en espanol, que diga por que sirve para
                    ESA meta (menciona la meta o una habilidad concreta).
                 7. "resumen": maximo 220 caracteres, motivador y concreto: que va a lograr con esta ruta.
-
+                8. TIEMPO: si la persona tiene un tope de horas, la suma de las horas de TODOS los cursos de la ruta (campo "horas"
+                   del catalogo, prerequisitos incluidos) no puede pasar de ese tope. Suma las horas antes de responder. Si la ruta
+                   completa no cabe, arma el primer tramo que SI cabe: los cursos mas basicos y mas importantes para su meta, sin
+                   romper los prerequisitos, y di en el "resumen" que es un primer tramo y cuantas horas usa del tope. Solo si ni el
+                   curso mas basico que necesita su meta (con sus prerequisitos) cabe, responde "viable": false y empieza el "motivo"
+                   con "Con tu tiempo disponible" y di cuantas horas harian falta. Si no hay tope, ignora esta regla.
+                9. UN SOLO TEMA (plan gratuito): la ruta es para una sola meta. Si la persona pide varias cosas distintas y sin
+                   relacion directa (por ejemplo "Python, contabilidad y diseno"), responde "viable": false y en "motivo" di:
+                   "En el plan gratuito cada roadmap es de un solo tema: elige uno de los que mencionas." Una meta con varias
+                   partes que se complementan directamente (por ejemplo "backend con Python y bases de datos") es UN solo tema.
+                10. NO REPITAS: si dos cursos del catalogo cubren lo mismo (mismas habilidades y mismo nivel), pon solo UNO en la
+                   ruta. El otro se le ofrece despues como alternativa para ese mismo paso.
+                %s
                 Responde UNICAMENTE con un objeto JSON, sin texto antes ni despues, con esta forma:
                 {"viable": true, "motivo": "", "resumen": "...", "cursos": [{"id": 3, "razon": "..."}]}
                 o, si no es viable:
                 {"viable": false, "motivo": "...", "resumen": "", "cursos": []}
-                """.formatted(catalogoJson, contexto.intereses(), contexto.nivel(), meta);
+                """.formatted(catalogoJson, contexto.intereses(), contexto.nivel(), meta, tiempoEnTexto(contexto),
+                correccionEnTexto(contexto));
 
         return leerPropuesta(llamarClaude(prompt, "Fallo al generar el roadmap con la API de Claude"));
+    }
+
+    private static String tiempoEnTexto(ContextoRoadmap contexto) {
+        Integer tope = contexto.presupuestoHoras();
+        return tope == null
+                ? "sin limite"
+                : contexto.horasPorSemana() + " horas por semana durante " + contexto.semanas() + " semanas = " + tope
+                + " horas en total (TOPE)";
+    }
+
+    // solo cuando la IA se paso del tiempo y se le pide, una vez, que lo corrija
+    private static String correccionEnTexto(ContextoRoadmap contexto) {
+        return contexto.correccion() == null || contexto.correccion().isBlank()
+                ? ""
+                : "CORRECCION: " + contexto.correccion().replace("<", "").replace(">", "") + "\n";
     }
 
     private static String recortar(String texto, int max) {
@@ -203,11 +237,13 @@ public class ClaudeRoadmapAiClient implements RoadmapAiClient {
         try {
             // los modelos nuevos piensan antes de responder y ese pensamiento cuenta dentro de
             // max_tokens, con un limite chico se quedaban sin espacio para la respuesta
-            Map<String, Object> body = Map.of(
-                    "model", model,
-                    "max_tokens", 8000,
-                    "messages", List.of(Map.of("role", "user", "content", prompt))
-            );
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("model", model);
+            body.put("max_tokens", 8000);
+            if (temperatura != null) {
+                body.put("temperature", temperatura);
+            }
+            body.put("messages", List.of(Map.of("role", "user", "content", prompt)));
 
             return restClient.post()
                     .uri(API_URL)

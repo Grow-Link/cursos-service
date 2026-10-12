@@ -145,6 +145,143 @@ class CatalogoYRoadmapRealTest {
         }
     }
 
+    // ------------------------------------------------------------- cursos nuevos, tiempo y determinismo
+
+    @Test
+    void unCursoNuevoEntraEnLosRoadmapsQueSeRelacionanConEl() throws Exception {
+        // antes de publicarlo, no hay nada en el catalogo para esa meta: se dice, no se inventa una ruta
+        String meta = "Quiero aprender seguridad industrial para prevenir accidentes";
+        String antes = generar(9120L, meta, List.of("INGENIERIA_INDUSTRIAL"), "PRINCIPIANTE", 422);
+        assertThat(antes).contains("No encontramos cursos relacionados");
+
+        Map<String, Object> cuerpo = new HashMap<>();
+        cuerpo.put("titulo", "Curso de Seguridad Industrial");
+        cuerpo.put("descripcion", "Aprende seguridad industrial: riesgos, prevencion de accidentes y equipo de proteccion personal");
+        cuerpo.put("categoria", "INGENIERIA_INDUSTRIAL");
+        cuerpo.put("nivel", "PRINCIPIANTE");
+        cuerpo.put("habilidadIds", List.of());
+        cuerpo.put("publicadorUsuarioId", 9121L);
+        cuerpo.put("prerequisitoIds", List.of());
+        cuerpo.put("duracionHoras", 12);
+        cuerpo.put("temario", List.of("Que es la seguridad industrial", "Riesgos comunes", "Prevencion de accidentes", "Equipo de proteccion"));
+        cuerpo.put("examen", List.of(pregunta("a", "b", "c", "d"), pregunta("a", "b", "c", "d"), pregunta("a", "b", "c", "d")));
+        mockMvc.perform(post("/api/cursos").header("Authorization", token(9121L)).contentType("application/json")
+                        .content(objectMapper.writeValueAsString(cuerpo)))
+                .andExpect(status().isCreated());
+
+        // ya publicado, un roadmap con esa meta lo incluye; uno con otra meta no
+        JsonNode despues = generarOk(9122L, meta, List.of("INGENIERIA_INDUSTRIAL"), "PRINCIPIANTE");
+        assertThat(titulos(despues)).contains("Curso de Seguridad Industrial");
+        JsonNode otraMeta = generarOk(9123L, "Quiero aprender Python para analizar datos", List.of("INGENIERIA_SISTEMAS"),
+                "PRINCIPIANTE");
+        assertThat(titulos(otraMeta)).doesNotContain("Curso de Seguridad Industrial");
+    }
+
+    @Test
+    void conTiempoDisponibleLaRutaNuncaSePasaDeLasHoras() throws Exception {
+        String meta = "Quiero aprender Python para analizar datos";
+        JsonNode sinLimite = generarOk(9130L, meta, List.of("INGENIERIA_SISTEMAS"), "PRINCIPIANTE");
+        int horasSinLimite = sinLimite.get("horasTotales").asInt();
+        assertThat(sinLimite.path("presupuestoHoras").isMissingNode() || sinLimite.path("presupuestoHoras").isNull()).isTrue();
+
+        // 5 h por semana durante 8 semanas = 40 h: la ruta tiene que caber, y es mas corta que la ilimitada
+        JsonNode con40 = objectMapper.readTree(generarConTiempo(9131L, meta, 5, 8, 201));
+        assertThat(con40.get("presupuestoHoras").asInt()).isEqualTo(40);
+        assertThat(con40.get("horasPorSemana").asInt()).isEqualTo(5);
+        assertThat(con40.get("semanas").asInt()).isEqualTo(8);
+        assertThat(con40.get("horasTotales").asInt()).isLessThanOrEqualTo(40).isLessThan(horasSinLimite);
+        // como no cabe todo lo que pide la meta, se dice que es un primer tramo
+        assertThat(con40.get("resumen").asText()).contains("Primer tramo");
+        // y sigue respetando el orden de los prerequisitos
+        Map<Long, Integer> orden = new HashMap<>();
+        con40.get("cursos").forEach(c -> orden.put(c.get("cursoId").asLong(), c.get("orden").asInt()));
+        for (JsonNode c : con40.get("cursos")) {
+            for (JsonNode pre : c.get("prerequisitoIds")) {
+                if (orden.containsKey(pre.asLong())) {
+                    assertThat(orden.get(pre.asLong())).isLessThan(c.get("orden").asInt());
+                }
+            }
+        }
+    }
+
+    @Test
+    void siElTiempoNoAlcanzaNiParaEmpezarSeExplicaYNoSeArmaUnaRutaImposible() throws Exception {
+        String cuerpo = generarConTiempo(9132L, "Quiero aprender Python para analizar datos", 1, 1, 422);
+        assertThat(cuerpo).contains("tiempo disponible").contains("horas");
+    }
+
+    @Test
+    void elTiempoSeMandaCompletoONoSeManda() throws Exception {
+        Map<String, Object> cuerpo = new HashMap<>();
+        cuerpo.put("usuarioId", 9133L);
+        cuerpo.put("metas", "Quiero aprender Python para analizar datos");
+        cuerpo.put("intereses", List.of("INGENIERIA_SISTEMAS"));
+        cuerpo.put("nivel", "PRINCIPIANTE");
+        cuerpo.put("horasPorSemana", 5); // falta el plazo
+        mockMvc.perform(post("/api/roadmap/generar").header("Authorization", token(9133L))
+                        .contentType("application/json").content(objectMapper.writeValueAsString(cuerpo)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void conLaMismaEntradaElRoadmapEsSiempreElMismo() throws Exception {
+        String meta = "Quiero dominar Python avanzado para desarrollar aplicaciones";
+        List<String> primera = titulos(generarOk(9140L, meta, List.of("INGENIERIA_SISTEMAS"), "PRINCIPIANTE"));
+        for (long usuario = 9141L; usuario <= 9144L; usuario++) {
+            assertThat(titulos(generarOk(usuario, meta, List.of("INGENIERIA_SISTEMAS"), "PRINCIPIANTE")))
+                    .as("repeticion con el usuario " + usuario).containsExactlyElementsOf(primera);
+        }
+        // y con tiempo tambien
+        List<String> conTiempo = titulos(objectMapper.readTree(generarConTiempo(9145L, meta, 6, 10, 201)));
+        assertThat(titulos(objectMapper.readTree(generarConTiempo(9146L, meta, 6, 10, 201)))).containsExactlyElementsOf(conTiempo);
+    }
+
+    // ------------------------------------------------------------- plan gratuito y alternativas
+
+    @Test
+    void elPlanGratuitoArmaCadaRoadmapSobreUnSoloTema() throws Exception {
+        // dos areas a la vez no entran en el plan gratuito: se explica y se dice que es del premium
+        String cuerpo = generar(9150L, "Quiero aprender Python para analizar datos",
+                List.of("INGENIERIA_SISTEMAS", "MATEMATICAS"), "PRINCIPIANTE", 422);
+        assertThat(cuerpo).contains("plan gratuito").contains("premium");
+        // una sola area, sin problema
+        generarOk(9151L, "Quiero aprender Python para analizar datos", List.of("INGENIERIA_SISTEMAS"), "PRINCIPIANTE");
+    }
+
+    @Test
+    void lasAlternativasDeUnPasoCubrenLoMismoYAprobarlasCumpleElPaso() throws Exception {
+        // habilidades reales del area de idiomas
+        Map<String, Long> habilidad = new HashMap<>();
+        leer("/api/habilidades?categoria=IDIOMAS", 9152L).forEach(h -> habilidad.put(h.get("nombre").asText(), h.get("id").asLong()));
+        long ingles = habilidad.get("Inglés");
+        long conversacion = habilidad.get("Conversación");
+
+        long principal = crearCursoDeIdiomas("Curso de Esperanto", List.of(ingles), 9153L, true);
+        long equivalente = crearCursoDeIdiomas("Curso de Lengua Auxiliar Internacional", List.of(ingles, conversacion), 9153L, true);
+        long sinExamen = crearCursoDeIdiomas("Curso de Interlingua Sin Examen", List.of(ingles), 9153L, false);
+        long masBasico = crearCursoDeIdiomas("Curso de Lectura Distinta", List.of(conversacion), 9153L, true); // le falta "Inglés"
+
+        JsonNode ruta = generarOk(9154L, "Quiero aprender esperanto", List.of("IDIOMAS"), "PRINCIPIANTE");
+        assertThat(titulos(ruta)).containsExactly("Curso de Esperanto");
+
+        JsonNode alternativas = ruta.get("cursos").get(0).get("alternativas");
+        List<Long> ids = new ArrayList<>();
+        alternativas.forEach(a -> ids.add(a.get("cursoId").asLong()));
+        // cubre todo lo del paso (Inglés) y es del mismo nivel y tiene examen: SI. Sin examen: NO. Le falta una habilidad: NO.
+        assertThat(ids).contains(equivalente).doesNotContain(sinExamen, masBasico, principal);
+        alternativas.forEach(a -> {
+            assertThat(a.get("nivel").asText()).isEqualTo("PRINCIPIANTE");
+            assertThat(a.get("totalPreguntasExamen").asInt()).isGreaterThan(0);
+            assertThat(StreamSupport.stream(a.get("habilidades").spliterator(), false).map(JsonNode::asText)).contains("Inglés");
+        });
+
+        // aprobar la alternativa deja el curso completado (el paso lo cumple el front al ver ese historial)
+        JsonNode aprobado = objectMapper.readTree(presentar(equivalente, 9154L, "[0, 0, 0]", 200));
+        assertThat(aprobado.get("aprobado").asBoolean()).isTrue();
+        JsonNode completados = leer("/api/cursos/completados?usuarioId=9154", 9154L);
+        assertThat(StreamSupport.stream(completados.spliterator(), false).anyMatch(c -> c.get("cursoId").asLong() == equivalente)).isTrue();
+    }
+
     // ------------------------------------------------------------- examen
 
     @Test
@@ -261,6 +398,21 @@ class CatalogoYRoadmapRealTest {
                 .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
     }
 
+    private String generarConTiempo(long usuarioId, String metas, int horasPorSemana, int semanas, int estadoEsperado)
+            throws Exception {
+        Map<String, Object> cuerpo = new HashMap<>();
+        cuerpo.put("usuarioId", usuarioId);
+        cuerpo.put("metas", metas);
+        cuerpo.put("intereses", List.of("INGENIERIA_SISTEMAS"));
+        cuerpo.put("nivel", "PRINCIPIANTE");
+        cuerpo.put("horasPorSemana", horasPorSemana);
+        cuerpo.put("semanas", semanas);
+        return mockMvc.perform(post("/api/roadmap/generar").header("Authorization", token(usuarioId))
+                        .contentType("application/json").content(objectMapper.writeValueAsString(cuerpo)))
+                .andExpect(status().is(estadoEsperado))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+    }
+
     private JsonNode generarOk(long usuarioId, String metas, List<String> intereses, String nivel) throws Exception {
         return objectMapper.readTree(generar(usuarioId, metas, intereses, nivel, 201));
     }
@@ -276,6 +428,16 @@ class CatalogoYRoadmapRealTest {
                         .contentType("application/json").content("{\"respuestas\": " + respuestas + "}"))
                 .andExpect(status().is(estadoEsperado))
                 .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+    }
+
+    private long crearCursoDeIdiomas(String titulo, List<Long> habilidadIds, long publicadorId, boolean conExamen) throws Exception {
+        Map<String, Object> cuerpo = cuerpoCurso(titulo, publicadorId,
+                conExamen ? List.of(pregunta("a", "b", "c", "d"), pregunta("a", "b", "c", "d"), pregunta("a", "b", "c", "d")) : null);
+        cuerpo.put("habilidadIds", habilidadIds);
+        String creado = mockMvc.perform(post("/api/cursos").header("Authorization", token(publicadorId))
+                        .contentType("application/json").content(objectMapper.writeValueAsString(cuerpo)))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        return objectMapper.readTree(creado).get("id").asLong();
     }
 
     private Map<String, Object> pregunta(String a, String b, String c, String d) {
