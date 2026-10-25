@@ -9,6 +9,7 @@ import com.growlink.cursos.application.MetaInvalidaException;
 import com.growlink.cursos.application.MetaNoViableException;
 import com.growlink.cursos.application.HabilidadCategoriaInvalidaException;
 import com.growlink.cursos.application.HabilidadNoEncontradaException;
+import com.growlink.cursos.application.LimiteExcedidoException;
 import com.growlink.cursos.application.NoAutorizadoException;
 import com.growlink.cursos.application.RoadmapNoEncontradoException;
 import org.springframework.http.HttpStatus;
@@ -23,6 +24,14 @@ import java.util.stream.Collectors;
 public class GlobalExceptionHandler {
 
     record ErrorBody(String message) {
+    }
+
+    // demasiados roadmaps seguidos: 429 y, en Retry-After, cuantos segundos esperar (lo entienden los clientes y los proxies)
+    @ExceptionHandler(LimiteExcedidoException.class)
+    public ResponseEntity<ErrorBody> handleLimiteExcedido(LimiteExcedidoException e) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header("Retry-After", String.valueOf(e.getSegundosParaReintentar()))
+                .body(new ErrorBody(e.getMessage()));
     }
 
     @ExceptionHandler(CursoNoEncontradoException.class)

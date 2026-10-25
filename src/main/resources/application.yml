@@ -22,6 +22,29 @@ jwt:
 # activa si la variable de entorno CLAUDE_API_KEY esta configurada; mientras
 # tanto RoadmapService usa el modo de respaldo (ver README).
 
+# ATRIBUTO: disponibilidad. Solo se expone la salud (sin detalles: no filtra nombres de bases ni versiones) y sus
+# dos sondas: liveness (el proceso vive) y readiness (puede atender: incluye la base de datos).
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+
+# ATRIBUTO: seguridad y costo. Cada persona puede pedir como maximo `generaciones` roadmaps en `ventana-minutos`
+# (cada uno puede costar una llamada a la IA). Cada replica cuenta por su lado. generaciones: 0 lo apaga.
+roadmap:
+  limite:
+    generaciones: ${ROADMAP_LIMITE_GENERACIONES:10}
+    ventana-minutos: ${ROADMAP_LIMITE_VENTANA_MINUTOS:10}
+
 logging:
   level:
     com.growlink.cursos: INFO
+  pattern:
+    # ATRIBUTO: observabilidad. El id de la peticion (X-Request-Id) sale en cada linea del log
+    level: "%5p [rid=%X{rid:-}]"

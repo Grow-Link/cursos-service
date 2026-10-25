@@ -333,6 +333,18 @@ lo hace asi.
 | `GROWLINK_JWT_SECRET` | Obligatoria, el mismo secreto que usa usuarios-service |
 | `CLAUDE_API_KEY` | La llave de la API de Claude, con ella el roadmap se genera con IA real |
 | `ROADMAP_AI_MODEL` | Opcional, el modelo de Claude a usar (por defecto `claude-sonnet-5-5`) |
+| `ROADMAP_LIMITE_GENERACIONES` | Opcional, cuantos roadmaps puede pedir una persona en la ventana (por defecto `10`; `0` lo apaga) |
+| `ROADMAP_LIMITE_VENTANA_MINUTOS` | Opcional, el largo de esa ventana en minutos (por defecto `10`) |
+
+### Salud, trazabilidad y limite de uso
+
+- **Salud**: `GET /actuator/health` (y `/actuator/health/liveness` y `/readiness`) responde sin credenciales y sin
+  detalles. `readiness` incluye la base de datos: es la que conviene usar como "health check" en Azure o en el
+  balanceador. No se exponen otros endpoints de actuator.
+- **Trazabilidad**: cada peticion lleva `X-Request-Id` (se respeta uno valido que mande el balanceador, si no se crea),
+  vuelve en la respuesta y sale en cada linea del log como `[rid=...]`.
+- **Limite de roadmaps**: pedir mas de `ROADMAP_LIMITE_GENERACIONES` en `ROADMAP_LIMITE_VENTANA_MINUTOS` responde
+  `429` con `Retry-After` (segundos) y un mensaje que dice cuanto esperar. Cada replica cuenta por su lado.
 
 ## Pendiente
 

@@ -3,6 +3,7 @@ package com.growlink.cursos.adapter.web;
 import com.growlink.cursos.adapter.web.dto.RoadmapCompletadoResponse;
 import com.growlink.cursos.adapter.web.dto.RoadmapGenerarRequest;
 import com.growlink.cursos.adapter.web.dto.RoadmapResponse;
+import com.growlink.cursos.application.LimiteDeGeneraciones;
 import com.growlink.cursos.application.RoadmapService;
 import com.growlink.cursos.infrastructure.security.AuthenticatedUser;
 import io.swagger.v3.oas.annotations.Operation;
@@ -20,15 +21,19 @@ import java.util.List;
 public class RoadmapController {
 
     private final RoadmapService roadmapService;
+    private final LimiteDeGeneraciones limiteDeGeneraciones;
 
-    public RoadmapController(RoadmapService roadmapService) {
+    public RoadmapController(RoadmapService roadmapService, LimiteDeGeneraciones limiteDeGeneraciones) {
         this.roadmapService = roadmapService;
+        this.limiteDeGeneraciones = limiteDeGeneraciones;
     }
 
-    // HU-11: cualquier usuario autenticado puede generar su propio roadmap
+    // HU-11: cualquier usuario autenticado puede generar su propio roadmap (con un tope por persona, ver
+    // LimiteDeGeneraciones: cada roadmap puede costar una llamada a la IA)
     @PostMapping("/generar")
     public ResponseEntity<RoadmapResponse> generar(@Valid @RequestBody RoadmapGenerarRequest request) {
         AuthenticatedUser.exigirPropio(request.usuarioId());
+        limiteDeGeneraciones.registrar(AuthenticatedUser.currentUserId());
         var detalle = roadmapService.generar(request.usuarioId(), request.metas(), request.intereses(),
                 request.nivel(), request.horasPorSemana(), request.semanas());
         return ResponseEntity.status(HttpStatus.CREATED).body(RoadmapResponse.from(detalle));
