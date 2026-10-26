@@ -6,6 +6,7 @@ import com.growlink.cursos.application.CursoNoEncontradoException;
 import com.growlink.cursos.application.CursoYaCompletadoException;
 import com.growlink.cursos.application.ExamenInvalidoException;
 import com.growlink.cursos.application.MetaInvalidaException;
+import com.growlink.cursos.application.MetricasDeRoadmap;
 import com.growlink.cursos.application.MetaNoViableException;
 import com.growlink.cursos.application.HabilidadCategoriaInvalidaException;
 import com.growlink.cursos.application.HabilidadNoEncontradaException;
@@ -26,9 +27,16 @@ public class GlobalExceptionHandler {
     record ErrorBody(String message) {
     }
 
+    private final MetricasDeRoadmap metricas;
+
+    public GlobalExceptionHandler(MetricasDeRoadmap metricas) {
+        this.metricas = metricas;
+    }
+
     // demasiados roadmaps seguidos: 429 y, en Retry-After, cuantos segundos esperar (lo entienden los clientes y los proxies)
     @ExceptionHandler(LimiteExcedidoException.class)
     public ResponseEntity<ErrorBody> handleLimiteExcedido(LimiteExcedidoException e) {
+        metricas.limiteRechazado();
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                 .header("Retry-After", String.valueOf(e.getSegundosParaReintentar()))
                 .body(new ErrorBody(e.getMessage()));

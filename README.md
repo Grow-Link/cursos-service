@@ -345,6 +345,17 @@ lo hace asi.
   vuelve en la respuesta y sale en cada linea del log como `[rid=...]`.
 - **Limite de roadmaps**: pedir mas de `ROADMAP_LIMITE_GENERACIONES` en `ROADMAP_LIMITE_VENTANA_MINUTOS` responde
   `429` con `Retry-After` (segundos) y un mensaje que dice cuanto esperar. Cada replica cuenta por su lado.
+- **Metricas** (`GET /actuator/metrics/<nombre>`, **solo con token de ADMIN**; cuentan por replica y desde que arranco):
+
+  | Medida | Que responde |
+  |---|---|
+  | `growlink.roadmap.generaciones` (`fuente` = `IA` o `RESPALDO`) | Cuantos roadmaps armo la IA y cuantos el respaldo |
+  | `growlink.roadmap.cache` (`resultado` = `acierto` o `fallo`) | Cuantas veces se evito una llamada a la IA |
+  | `growlink.roadmap.ia.llamadas` (`resultado` = `respondio`, `fallo`, `no_viable`) y `growlink.roadmap.ia.duracion` | Como le fue a Claude y cuanto tardo |
+  | `growlink.roadmap.ia.propuestas` (`resultado` = `aceptada`, `corregida`, `excede_horas`, `invalida`) | Cuanto de lo que propone la IA pasa la validacion del servidor |
+  | `growlink.roadmap.limite.rechazos` | Cuantas peticiones freno el tope por persona |
+
+  Ejemplo: `curl -H "Authorization: Bearer <token de admin>" "http://localhost:8086/actuator/metrics/growlink.roadmap.generaciones?tag=fuente:RESPALDO"`.
 
 ## Pendiente
 

@@ -39,6 +39,7 @@ public class RoadmapService {
     private final FallbackTopologicoRoadmapAiClient fallbackClient;
     private final RoadmapAiClient aiClient;
     private final PropuestaCache propuestaCache;
+    private final MetricasDeRoadmap metricas;
     private final int maxAreas;
     private final Object[] cerrojos = new Object[CERROJOS];
 
@@ -47,6 +48,7 @@ public class RoadmapService {
                            PreguntaExamenRepository preguntaExamenRepository,
                            CursoCompletadoRepository completadoRepository, MetaValidator metaValidator,
                            FallbackTopologicoRoadmapAiClient fallbackClient, PropuestaCache propuestaCache,
+                           MetricasDeRoadmap metricas,
                            @Value("${roadmap.plan.max-areas:1}") int maxAreas,
                            ObjectProvider<ClaudeRoadmapAiClient> claudeClientProvider) {
         this.cursoRepository = cursoRepository;
@@ -58,6 +60,7 @@ public class RoadmapService {
         this.metaValidator = metaValidator;
         this.fallbackClient = fallbackClient;
         this.propuestaCache = propuestaCache;
+        this.metricas = metricas;
         this.maxAreas = maxAreas;
         Arrays.setAll(cerrojos, i -> new Object());
         // si CLAUDE_API_KEY esta configurada, ese bean existe y se prefiere;
@@ -89,7 +92,9 @@ public class RoadmapService {
         List<CursoGrafoNodo> catalogoDisponible = sinCompletados(usuarioId, catalogoActivo);
         ContextoRoadmap contexto = validarEntrada(usuarioId, metas, intereses, nivel, horasPorSemana, semanas,
                 catalogoActivo, catalogoDisponible);
-        return guardar(contexto, generarRutaValidada(catalogoDisponible, contexto));
+        Generado generado = generarRutaValidada(catalogoDisponible, contexto);
+        metricas.generacion(generado.fuente());
+        return guardar(contexto, generado);
     }
 
     // para sembrar el usuario de demostracion al arrancar: siempre con el respaldo, nunca gasta una llamada a la IA
@@ -359,14 +364,16 @@ public class RoadmapService {
             Optional<PropuestaRoadmap> guardada = propuestaCache.buscar(clave);
             if (guardada.isPresent() && esPropuestaValida(guardada.get(), catalogoDisponible)
                     && (presupuesto == null || horasDe(guardada.get(), catalogoDisponible) <= presupuesto)) {
+                metricas.cache(true);
                 log.info("Roadmap: se reutiliza la propuesta de la IA ya guardada para esta misma entrada");
                 return new Generado(guardada.get(), FuenteRoadmap.IA);
             }
+            metricas.cache(false);
         }
 
         PropuestaRoadmap propuesta;
         try {
-            propuesta = aiClient.generarRuta(catalogoDisponible, contexto);
+            propuesta = preguntarALaIa(catalogoDisponible, contexto, hayIa);
         } catch (RoadmapAiException e) {
             // OJO: si la IA dijo que la meta no es viable (MetaNoViableException) NO se cae al respaldo,
             // se le explica a la persona. El respaldo solo entra cuando la IA fallo, no cuando dijo que no
@@ -377,18 +384,22 @@ public class RoadmapService {
         if (esPropuestaValida(propuesta, catalogoDisponible)) {
             int horas = horasDe(propuesta, catalogoDisponible);
             if (presupuesto == null || horas <= presupuesto) {
+                contarPropuesta(hayIa, "aceptada");
                 return deLaIa(clave, propuesta, hayIa);
             }
             // la IA se paso del tiempo: se le avisa cuanto sumo y se le pide una sola vez que lo corrija
             log.warn("La ruta de la IA suma {} h y el tope es {} h", horas, presupuesto);
+            contarPropuesta(hayIa, "excede_horas");
             if (hayIa) {
                 try {
-                    PropuestaRoadmap corregida = aiClient.generarRuta(catalogoDisponible, contexto.conCorreccion(
+                    PropuestaRoadmap corregida = preguntarALaIa(catalogoDisponible, contexto.conCorreccion(
                             "Tu propuesta anterior sumaba " + horas + " horas y el tope es " + presupuesto
-                                    + ". Devuelve una ruta nueva que sume " + presupuesto + " horas o menos."));
+                                    + ". Devuelve una ruta nueva que sume " + presupuesto + " horas o menos."), true);
                     if (esPropuestaValida(corregida, catalogoDisponible) && horasDe(corregida, catalogoDisponible) <= presupuesto) {
+                        contarPropuesta(true, "corregida");
                         return deLaIa(clave, corregida, true);
                     }
+                    contarPropuesta(true, "invalida");
                 } catch (RoadmapAiException e) {
                     log.warn("Fallo la IA al corregir el tiempo: {}", e.getMessage());
                 }
@@ -399,7 +410,37 @@ public class RoadmapService {
         log.warn("La respuesta de la IA no es un subconjunto valido del catalogo disponible/prerequisitos reales "
                 + "(incluye algo inventado, repetido, dado de baja o ya completado por esta persona), "
                 + "se usa el modo de respaldo");
+        contarPropuesta(hayIa, "invalida");
         return new Generado(fallbackClient.generarRuta(catalogoDisponible, contexto), FuenteRoadmap.RESPALDO);
+    }
+
+    // la llamada a la IA, midiendo como le fue y cuanto tardo. Si el aiClient es el respaldo (sin llave) no es una
+    // llamada a la IA y no se cuenta. Lo que lance (fallo, o "la meta no es viable") se vuelve a lanzar tal cual
+    private PropuestaRoadmap preguntarALaIa(List<CursoGrafoNodo> catalogo, ContextoRoadmap contexto, boolean hayIa) {
+        long inicio = System.nanoTime();
+        try {
+            PropuestaRoadmap propuesta = aiClient.generarRuta(catalogo, contexto);
+            if (hayIa) {
+                metricas.llamadaIa("respondio", System.nanoTime() - inicio);
+            }
+            return propuesta;
+        } catch (RoadmapAiException e) {
+            if (hayIa) {
+                metricas.llamadaIa("fallo", System.nanoTime() - inicio);
+            }
+            throw e;
+        } catch (MetaNoViableException e) {
+            if (hayIa) {
+                metricas.llamadaIa("no_viable", System.nanoTime() - inicio);
+            }
+            throw e;
+        }
+    }
+
+    private void contarPropuesta(boolean hayIa, String resultado) {
+        if (hayIa) {
+            metricas.propuestaDeLaIa(resultado);
+        }
     }
 
     // una propuesta de la IA que paso la validacion: se guarda (solo las de la IA; lo que sale del respaldo no se

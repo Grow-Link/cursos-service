@@ -22,13 +22,14 @@ jwt:
 # activa si la variable de entorno CLAUDE_API_KEY esta configurada; mientras
 # tanto RoadmapService usa el modo de respaldo (ver README).
 
-# ATRIBUTO: disponibilidad. Solo se expone la salud (sin detalles: no filtra nombres de bases ni versiones) y sus
+# ATRIBUTO: disponibilidad. La salud se expone sin detalles (no filtra nombres de bases ni versiones) y con sus
 # dos sondas: liveness (el proceso vive) y readiness (puede atender: incluye la base de datos).
+# ATRIBUTO: observabilidad. Las metricas (/actuator/metrics) las ve solo un ADMIN, ver SecurityConfig.
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics
   endpoint:
     health:
       probes:

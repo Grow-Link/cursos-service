@@ -31,6 +31,8 @@ public class SecurityConfig {
                                 "/v3/api-docs/**",
                                 "/actuator/health/**"
                         ).permitAll()
+                        // las metricas son datos de operacion (cuantas llamadas a la IA, cuanta cache): solo un ADMIN
+                        .requestMatchers("/actuator/metrics", "/actuator/metrics/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .addFilterBefore(new TokenAuthenticationFilter(tokenService), UsernamePasswordAuthenticationFilter.class);
 

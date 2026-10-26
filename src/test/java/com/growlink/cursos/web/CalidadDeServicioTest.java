@@ -45,6 +45,8 @@ class CalidadDeServicioTest {
     private MockMvc mockMvc;
     @Autowired
     private ObjectMapper objectMapper;
+    @Autowired
+    private io.micrometer.core.instrument.MeterRegistry registro;
 
     // ------------------------------------------------------------------ disponibilidad
 
@@ -115,10 +117,13 @@ class CalidadDeServicioTest {
     void pedirRoadmapsSinParar_terminaEn429ConRetryAfterYElTopeEsPorPersona() throws Exception {
         long abusador = 9301L;
         long otra = 9302L;
+        double rechazos0 = registro.counter("growlink.roadmap.limite.rechazos").count();
 
         generar(abusador, 201);
         generar(abusador, 201);
         MvcResult tercero = generar(abusador, 429);
+        // y queda contado, para ver en las metricas cuanto abuso frena el tope
+        assertThat(registro.counter("growlink.roadmap.limite.rechazos").count() - rechazos0).isEqualTo(1);
 
         assertThat(tercero.getResponse().getHeader("Retry-After")).isNotBlank();
         assertThat(Long.parseLong(tercero.getResponse().getHeader("Retry-After"))).isBetween(1L, 601L);
