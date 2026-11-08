@@ -145,7 +145,7 @@ class RoadmapCompletadosTest {
         generarCon(usuarioId, List.of(c1), "Quiero trabajar en derecho comercial");
         completar(c1, usuarioId);
 
-        mockMvc.perform(patch("/api/cursos/" + c1 + "/baja").header("Authorization", token(publicadorId, "PROFESSOR")))
+        mockMvc.perform(patch("/api/cursos/" + c1 + "/baja").header("Authorization", token(publicadorId, "PUBLICADOR")))
                 .andExpect(status().isNoContent());
 
         JsonNode lista = completados(usuarioId, 200);
@@ -274,7 +274,7 @@ class RoadmapCompletadosTest {
         cuerpo.put("prerequisitoIds", List.of());
         cuerpo.put("duracionHoras", duracionHoras);
 
-        String respuesta = mockMvc.perform(post("/api/cursos").header("Authorization", token(publicadorId, "PROFESSOR"))
+        String respuesta = mockMvc.perform(post("/api/cursos").header("Authorization", token(publicadorId, "PUBLICADOR"))
                         .contentType("application/json").content(objectMapper.writeValueAsString(cuerpo)))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);

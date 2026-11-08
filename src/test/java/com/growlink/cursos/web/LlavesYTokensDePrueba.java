@@ -57,8 +57,10 @@ final class LlavesYTokensDePrueba {
                 .audience().add(datos.audiencias).and()
                 .issuedAt(Date.from(datos.desde))
                 .claim("tid", datos.inquilino)
-                .claim("growlink_uid", datos.usuarioId)
                 .claim("roles", List.of("USUARIO"));
+        if (datos.usuarioId != null) {
+            constructor.claim("growlink_uid", datos.usuarioId);
+        }
         // sin expiration a proposito cuando hasta es null: asi se puede probar el token que no vence nunca
         if (datos.hasta != null) {
             constructor.expiration(Date.from(datos.hasta));
@@ -73,7 +75,7 @@ final class LlavesYTokensDePrueba {
         private List<String> audiencias;
         private PrivateKey llave = PAR.getPrivate();
         private String sujeto = "AAAAAAAAAAAAAAAAAAAAAIk_bMBSKsTxQ4Y-eV3VvQ4";
-        private long usuarioId = 7777L;
+        private Long usuarioId = 7777L;
         private Instant desde = Instant.now();
         private Instant hasta = Instant.now().plusSeconds(3600);
 
@@ -105,6 +107,20 @@ final class LlavesYTokensDePrueba {
             return this;
         }
 
+        Datos conSujeto(String sujeto) {
+            this.sujeto = sujeto;
+            return this;
+        }
+
+        /**
+         * Un token tal como lo manda Entra de verdad: con el `sub` opaco y SIN ningun claim numerico de GrowLink.
+         * Es el caso que obliga a preguntarle la identidad a usuarios-service.
+         */
+        Datos sinIdNumerico() {
+            this.usuarioId = null;
+            return this;
+        }
+
         Datos sinSujeto() {
             this.sujeto = null;
             return this;
@@ -121,7 +137,7 @@ final class LlavesYTokensDePrueba {
             return this;
         }
 
-        long usuarioId() {
+        Long usuarioId() {
             return usuarioId;
         }
 

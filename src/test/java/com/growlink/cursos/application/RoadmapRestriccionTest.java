@@ -394,7 +394,7 @@ class RoadmapRestriccionTest {
         cuerpo.put("duracionHoras", 20);
 
         String respuesta = mockMvc.perform(post("/api/cursos")
-                        .header("Authorization", token(publicadorId, "PROFESSOR"))
+                        .header("Authorization", token(publicadorId, "PUBLICADOR"))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(cuerpo)))
                 .andExpect(status().isCreated())
@@ -404,7 +404,7 @@ class RoadmapRestriccionTest {
 
     private void darDeBaja(Long cursoId, long publicadorId) throws Exception {
         mockMvc.perform(patch("/api/cursos/" + cursoId + "/baja")
-                        .header("Authorization", token(publicadorId, "PROFESSOR")))
+                        .header("Authorization", token(publicadorId, "PUBLICADOR")))
                 .andExpect(status().isNoContent());
     }
 

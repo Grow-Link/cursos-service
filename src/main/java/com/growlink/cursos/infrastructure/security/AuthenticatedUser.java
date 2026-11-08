@@ -18,9 +18,25 @@ public final class AuthenticatedUser {
     }
 
     public static boolean isAdmin() {
+        return tieneRol("ADMIN");
+    }
+
+    public static boolean tieneRol(String rol) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        return auth.getAuthorities().stream()
-                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+        return auth != null && auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_" + rol));
+    }
+
+    // Publicar un curso es cosa de un PUBLICADOR (o de un ADMIN): el catalogo es lo que ve toda la plataforma,
+    // asi que no puede escribir en el cualquiera que tenga cuenta.
+    //
+    // El rol sale de los permisos del SecurityContext, asi que esto funciona igual en los dos modos de
+    // autenticacion sin saber en cual esta: en legacy lo pone TokenAuthenticationFilter leyendo el JWT
+    // compartido, y en oidc lo pone el convertidor con lo que contesto usuarios-service (ver SecurityConfig).
+    public static void exigirPuedePublicar() {
+        if (!isAdmin() && !tieneRol("PUBLICADOR")) {
+            throw new NoAutorizadoException("Solo un PUBLICADOR o un ADMIN puede crear cursos");
+        }
     }
 
     // el usuarioId que llega en el body o en la URL lo escribe el cliente, asi que no se le cree:

@@ -130,6 +130,58 @@ es la comprobacion que de verdad delimita "para quien es este token".
 Lo demas no cambia al pasar a multi-inquilino: solo RS256, `exp` y `sub` obligatorios, la audiencia verificada,
 el interruptor `AUTH_MODE` (con `legacy` por defecto) y el fail-fast si la configuracion no tiene sentido.
 
+#### De donde sale la identidad: `auth.identity-source`
+
+El token de Entra **no trae la identidad de GrowLink**. Su `sub` es un texto opaco (algo como
+`AAAAAAAAAAAAAAAAAAAAAIk_bMBSKsTxQ4Y-eV3VvQ4`), no el `usuarioId` numerico con el que estan hechas las tablas de
+este servicio (`publicadorUsuarioId`, `roadmap.usuario_id`, `curso_completado.usuario_id`...), y el rol de
+GrowLink es cosa nuestra, no de Microsoft. Quien sabe las dos cosas es **usuarios-service**.
+
+- `usuarios-service` (valor por defecto): despues de validar el token (firma, emisor, audiencia, `exp`...), este
+  servicio llama a `GET {USUARIOS_SERVICE_URL}/api/usuarios/me` **reenviando el mismo token tal cual** y se queda
+  con el `usuarioId` y el `rol` de la respuesta. Ver `ClienteDeUsuariosService`.
+- `claims`: el `usuarioId` y el rol se leen del propio token (`AUTH_CLAIMS_USUARIO` / `AUTH_CLAIMS_ROLES`). Se
+  conserva para desarrollo y pruebas sin usuarios-service levantado. **En produccion no se quiere**, porque ahi
+  el rol lo diria el propio token.
+
+Cualquier otro valor **no deja arrancar** el servicio, igual que `USUARIOS_SERVICE_URL` ausente con
+`identity-source=usuarios-service`. En modo `legacy` nada de esto se usa: el `usuarioId` y el rol vienen en el JWT
+compartido, como siempre.
+
+**Cache.** Consultar a usuarios-service en *cada* peticion le doblaria el trafico y sumaria su latencia a la
+nuestra, asi que la identidad se guarda `AUTH_IDENTITY_CACHE_SECONDS` (60 s por defecto), con la clave puesta al
+SHA-256 del token (no el token: es una credencial). Dos topes a proposito:
+
+- la vigencia es el **retraso maximo** con el que este servicio se entera de un cambio de rol en
+  usuarios-service, y por eso es corta: un rol es un permiso;
+- una entrada **nunca vive mas que el `exp` de su token**, para que la cache no sea una forma de alargarlo.
+
+Hay tope de entradas (`AUTH_IDENTITY_CACHE_MAX`, 10 000) para que una lluvia de tokens distintos no haga crecer la
+memoria. De paso, la cache tapa un hueco de disponibilidad: si usuarios-service se cae, quien ya tiene su
+identidad guardada **sigue trabajando** hasta que se le venza.
+
+**Que pasa cuando usuarios-service no colabora** (tiempos limite cortos a proposito: 2 s de conexion, 3 s de
+lectura, porque esta llamada esta en el camino de cada peticion):
+
+| usuarios-service | Respuesta de este servicio | Por que |
+|---|---|---|
+| `200` con `usuarioId` | la peticion sigue | esa es la identidad, y se guarda un rato |
+| `401` | `401` | no reconoce el token; no hay nada que hacer |
+| otro `4xx` (`403`, `404`...) | `401` | el token es valido pero no se resuelve a un usuario de GrowLink. Reintentar no lo arregla, asi que no es un `503` |
+| `5xx`, timeout, no abre | `503` + `Retry-After` | el token puede estar perfecto y el problema ser nuestro: un `401` mandaria a la gente a iniciar sesion otra vez para nada |
+| `200` sin `usuarioId` | `503` | el contrato no cuadra |
+
+En los cuatro rechazos queda el motivo en el log con el `X-Request-Id` de la peticion (y ese mismo
+`X-Request-Id` se le reenvia a usuarios-service, para poder seguir una peticion de un servicio al otro). Lo que
+**nunca** pasa es aceptar el token a medias ni caer a leer los claims: eso seria dejar que el propio token diga
+su rol, que es justo lo que este modo evita.
+
+#### Quien puede publicar cursos
+
+Crear un curso (`POST /api/cursos`) pide rol **PUBLICADOR o ADMIN**; un `USUARIO` recibe `403` y no se crea nada
+(ver `AuthenticatedUser.exigirPuedePublicar`). La regla es una sola y vale en los dos modos: lo que cambia es de
+donde sale el rol — del JWT compartido en `legacy`, y de usuarios-service en `oidc`.
+
 #### Ejemplo de configuracion para Entra (multi-inquilino)
 
 En el registro de la aplicacion en Entra: *Supported account types* = **Accounts in any organizational directory
@@ -145,6 +197,11 @@ AUTH_ALLOWED_TENANTS=
 # opcional: por defecto ya es el juego comun de Entra en multi-inquilino
 # AUTH_JWKS_URI=https://login.microsoftonline.com/common/discovery/v2.0/keys
 # en modo oidc NO hace falta AUTH_ISSUER_URI (no hay un emisor fijo) ni GROWLINK_JWT_SECRET
+
+# la identidad de GrowLink (usuarioId numerico + rol) la resuelve usuarios-service: el token de Entra no la trae
+USUARIOS_SERVICE_URL=http://usuarios-service:8081
+# opcional: cuanto se guarda una identidad ya resuelta (es el retraso con el que se nota un cambio de rol)
+AUTH_IDENTITY_CACHE_SECONDS=60
 ```
 
 Y la misma app en **un solo inquilino** (lo de antes, por si se quiere volver):
@@ -434,6 +491,10 @@ lo hace asi.
 | `AUTH_ISSUER_URI` | Obligatoria con `AUTH_MODE=oidc` **y** `AUTH_MULTI_TENANT=false`: quien firma los tokens, p.ej. `https://login.microsoftonline.com/<tenant>/v2.0`. En multi-inquilino no se usa |
 | `AUTH_AUDIENCE` | Obligatoria con `AUTH_MODE=oidc`: para que aplicacion tienen que venir. Acepta **varias separadas por comas** (`api://<client-id>` y el `<client-id>` pelado), y pasa si el `aud` coincide con alguna |
 | `AUTH_ALLOWED_TENANTS` | Opcional, solo en multi-inquilino: GUIDs de inquilino separados por comas. Vacia = cualquier inquilino de Entra. Un GUID mal escrito no deja arrancar |
+| `AUTH_IDENTITY_SOURCE` | Opcional con `AUTH_MODE=oidc`: `usuarios-service` (por defecto) resuelve el usuarioId y el rol en usuarios-service; `claims` los lee del token (solo desarrollo). Otro valor no deja arrancar |
+| `USUARIOS_SERVICE_URL` | Obligatoria con `AUTH_IDENTITY_SOURCE=usuarios-service`: la base de usuarios-service, p.ej. `http://usuarios-service:8081`. Si falta, el servicio no arranca |
+| `AUTH_IDENTITY_CACHE_SECONDS` | Opcional, cuanto se guarda una identidad ya resuelta (por defecto `60`). Es el retraso maximo con el que se nota un cambio de rol; nunca pasa del `exp` del token |
+| `AUTH_IDENTITY_CACHE_MAX` | Opcional, tope de identidades guardadas a la vez (por defecto `10000`) |
 | `AUTH_JWKS_URI` | Opcional con `AUTH_MODE=oidc`: donde estan las llaves publicas. En multi-inquilino, por defecto las de `/common`; con un solo inquilino, se descubren desde el emisor. (`AUTH_JWK_SET_URI` se sigue aceptando como nombre viejo) |
 
 ### Salud, trazabilidad y limite de uso

@@ -1,5 +1,7 @@
 package com.growlink.cursos.infrastructure.config;
 
+import com.growlink.cursos.infrastructure.security.ClienteDeUsuariosService;
+import com.growlink.cursos.infrastructure.security.ConvertidorDeTokenConUsuariosService;
 import com.growlink.cursos.infrastructure.security.ConvertidorDeTokenOidc;
 import com.growlink.cursos.infrastructure.security.RegistroDeRechazosOidc;
 import com.growlink.cursos.infrastructure.security.ValidadorDeAudiencia;
@@ -23,6 +25,7 @@ import org.springframework.security.oauth2.jwt.JwtIssuerValidator;
 import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -42,6 +45,13 @@ import java.util.List;
 //                         cualquier inquilino de Entra
 //   AUTH_JWKS_URI         (opcional) donde estan las llaves publicas. Con multi-inquilino, por defecto las de
 //                         /common; con un solo inquilino, se descubren a partir del emisor
+//
+// Y de donde sale la identidad de GrowLink (usuarioId numerico + rol), que NO viene en el token de Entra:
+//   auth.identity-source  usuarios-service (por defecto) = se le pregunta a usuarios-service, que es su dueno.
+//                         claims = se lee del propio token; se conserva para desarrollo y pruebas sin tener
+//                         usuarios-service levantado. Cualquier otro valor no deja arrancar
+//   USUARIOS_SERVICE_URL  obligatoria con identity-source=usuarios-service
+//   AUTH_IDENTITY_CACHE_SECONDS  cuanto se guarda una identidad ya resuelta (60 s por defecto)
 @Configuration
 @ConditionalOnProperty(name = "auth.mode", havingValue = "oidc")
 public class AutenticacionOidcConfig {
@@ -51,6 +61,9 @@ public class AutenticacionOidcConfig {
     // el juego de llaves con el que Entra firma para todos los inquilinos (el valor por defecto en
     // multi-inquilino; AUTH_JWKS_URI lo puede cambiar)
     static final String JWKS_COMUN_DE_ENTRA = "https://login.microsoftonline.com/common/discovery/v2.0/keys";
+
+    static final String FUENTE_USUARIOS_SERVICE = "usuarios-service";
+    static final String FUENTE_CLAIMS = "claims";
 
     // Lo que se le exige a cada token: vigencia, los claims sin los que no se puede usar, de quien viene y para
     // quien es. La firma la comprueba el decodificador con las llaves publicas del emisor. Es un bean propio para
@@ -107,11 +120,41 @@ public class AutenticacionOidcConfig {
         return decodificador;
     }
 
+    // De donde sale la identidad de GrowLink. El token de Entra NO la trae: su `sub` es un texto opaco (no el
+    // usuarioId numerico con el que estan hechas las tablas de este servicio) y el rol es cosa de GrowLink, no de
+    // Microsoft. Por eso lo normal es preguntarselo a usuarios-service, que es su dueno.
+    //
+    // `claims` se conserva para desarrollo y pruebas sin usuarios-service levantado, pero no es lo que se quiere
+    // en produccion: ahi el rol lo diria el propio token.
     @Bean
     public Converter<Jwt, AbstractAuthenticationToken> convertidorDeTokenOidc(
+            @Value("${auth.identity-source:usuarios-service}") String fuenteDeIdentidad,
+            @Value("${auth.usuarios-service.url:}") String urlDeUsuariosService,
+            @Value("${auth.identity-cache-seconds:60}") long segundosDeCache,
+            @Value("${auth.identity-cache-max:10000}") int maxEntradasCache,
             @Value("${auth.oidc.claims-usuario:growlink_uid,uid,sub}") String claimsUsuario,
             @Value("${auth.oidc.claims-roles:roles,rol,groups}") String claimsRoles) {
-        return new ConvertidorDeTokenOidc(lista(claimsUsuario), lista(claimsRoles));
+
+        if (FUENTE_CLAIMS.equalsIgnoreCase(fuenteDeIdentidad)) {
+            log.warn("Autenticacion en modo OIDC: la identidad (usuarioId y rol) se lee de los CLAIMS del token. "
+                    + "Es para desarrollo y pruebas; en produccion deberia ser auth.identity-source="
+                    + FUENTE_USUARIOS_SERVICE);
+            return new ConvertidorDeTokenOidc(lista(claimsUsuario), lista(claimsRoles));
+        }
+        if (FUENTE_USUARIOS_SERVICE.equalsIgnoreCase(fuenteDeIdentidad)) {
+            // fail-fast: sin la URL no hay a quien preguntar, y descubrirlo con la primera peticion de un usuario
+            // seria enterarse tarde y en el peor momento
+            if (urlDeUsuariosService.isBlank()) {
+                throw new IllegalStateException("Con auth.identity-source=" + FUENTE_USUARIOS_SERVICE
+                        + " hace falta USUARIOS_SERVICE_URL");
+            }
+            log.info("Autenticacion en modo OIDC: la identidad se resuelve en usuarios-service ({}), "
+                    + "guardada {} s", urlDeUsuariosService, segundosDeCache);
+            return new ConvertidorDeTokenConUsuariosService(new ClienteDeUsuariosService(
+                    urlDeUsuariosService, Duration.ofSeconds(segundosDeCache), maxEntradasCache));
+        }
+        throw new IllegalStateException("auth.identity-source solo puede ser '" + FUENTE_USUARIOS_SERVICE
+                + "' o '" + FUENTE_CLAIMS + "', y llego: '" + fuenteDeIdentidad + "'");
     }
 
     @Bean

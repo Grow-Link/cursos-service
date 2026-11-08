@@ -52,11 +52,13 @@ public class CursoController {
         this.examenService = examenService;
     }
 
-    @Operation(summary = "Crear curso", description = NOTA_DUENO_O_ADMIN
+    @Operation(summary = "Crear curso", description = "Requiere rol PUBLICADOR o ADMIN."
             + " El publicadorUsuarioId del body debe ser el del propio usuario (salvo ADMIN)."
             + " Con examen (3 a 15 preguntas de 4 opciones) el curso se puede completar; sin examen no.")
     @PostMapping
     public ResponseEntity<CursoResponse> crear(@Valid @RequestBody CrearCursoRequest request) {
+        // el catalogo lo ve toda la plataforma: publicar en el es de PUBLICADOR o ADMIN, no de cualquier usuario
+        AuthenticatedUser.exigirPuedePublicar();
         Curso curso = cursoService.crear(request.titulo(), request.descripcion(), request.categoria(),
                 request.nivel(), request.habilidadIds(), request.linkContenido(), request.publicadorUsuarioId(),
                 request.prerequisitoIds(), request.duracionHoras(), request.temario(), aEntrada(request.examen()),

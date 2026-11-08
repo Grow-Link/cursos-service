@@ -78,7 +78,7 @@ class CursoFeaturesTest {
         body.put("duracionHoras", 20);
 
         mockMvc.perform(post("/api/cursos")
-                        .header("Authorization", token(2000, "PROFESSOR"))
+                        .header("Authorization", token(2000, "PUBLICADOR"))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isBadRequest())
@@ -98,7 +98,7 @@ class CursoFeaturesTest {
         // sin duracionHoras a proposito
 
         mockMvc.perform(post("/api/cursos")
-                        .header("Authorization", token(2009, "PROFESSOR"))
+                        .header("Authorization", token(2009, "PUBLICADOR"))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isBadRequest());
@@ -119,14 +119,14 @@ class CursoFeaturesTest {
 
         // otro usuario, no dueño ni admin: rechazado
         mockMvc.perform(put("/api/cursos/" + cursoId)
-                        .header("Authorization", token(2002, "PROFESSOR"))
+                        .header("Authorization", token(2002, "PUBLICADOR"))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(edicion)))
                 .andExpect(status().isForbidden());
 
         // el dueño si puede
         mockMvc.perform(put("/api/cursos/" + cursoId)
-                        .header("Authorization", token(2001, "PROFESSOR"))
+                        .header("Authorization", token(2001, "PUBLICADOR"))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(edicion)))
                 .andExpect(status().isOk())
@@ -139,7 +139,7 @@ class CursoFeaturesTest {
         Long cursoId = crearCurso("Topografia", "INGENIERIA_CIVIL", "PRINCIPIANTE", List.of(), 2003L);
 
         mockMvc.perform(patch("/api/cursos/" + cursoId + "/baja")
-                        .header("Authorization", token(2003, "PROFESSOR")))
+                        .header("Authorization", token(2003, "PUBLICADOR")))
                 .andExpect(status().isNoContent());
 
         mockMvc.perform(get("/api/cursos").param("categoria", "INGENIERIA_CIVIL")
@@ -148,7 +148,7 @@ class CursoFeaturesTest {
                 .andExpect(jsonPath("$[?(@.id == " + cursoId + ")]").isEmpty());
 
         mockMvc.perform(get("/api/cursos").param("publicadorUsuarioId", "2003")
-                        .header("Authorization", token(2003, "PROFESSOR")))
+                        .header("Authorization", token(2003, "PUBLICADOR")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[?(@.id == " + cursoId + ")].activo").value(hasItem(false)));
     }
@@ -159,7 +159,7 @@ class CursoFeaturesTest {
         Long inactivo = crearCurso("Control de calidad", "INGENIERIA_INDUSTRIAL", "PRINCIPIANTE", List.of(), 2004L);
 
         mockMvc.perform(patch("/api/cursos/" + inactivo + "/baja")
-                        .header("Authorization", token(2004, "PROFESSOR")))
+                        .header("Authorization", token(2004, "PUBLICADOR")))
                 .andExpect(status().isNoContent());
 
         mockMvc.perform(get("/api/cursos/estado-roadmap")
@@ -218,7 +218,7 @@ class CursoFeaturesTest {
 
         // se da de baja el curso, pero el historial lo sigue mostrando (ya no disponible)
         mockMvc.perform(patch("/api/cursos/" + cursoId + "/baja")
-                        .header("Authorization", token(2005, "PROFESSOR")))
+                        .header("Authorization", token(2005, "PUBLICADOR")))
                 .andExpect(status().isNoContent());
 
         mockMvc.perform(get("/api/cursos/completados").param("usuarioId", String.valueOf(usuarioId))
@@ -235,7 +235,7 @@ class CursoFeaturesTest {
         Long avanzado = crearCurso("Zebracodigo Avanzado", "INGENIERIA_SISTEMAS", "INTERMEDIO", List.of(), 2006L);
 
         mockMvc.perform(put("/api/cursos/" + avanzado + "/prerequisitos")
-                        .header("Authorization", token(2006, "PROFESSOR"))
+                        .header("Authorization", token(2006, "PUBLICADOR"))
                         .contentType("application/json")
                         .content("{\"prerequisitoIds\": [" + base + "]}"))
                 .andExpect(status().isOk());
@@ -292,7 +292,7 @@ class CursoFeaturesTest {
         body.put("duracionHoras", 18);
 
         String creado = mockMvc.perform(post("/api/cursos")
-                        .header("Authorization", token(2008, "PROFESSOR"))
+                        .header("Authorization", token(2008, "PUBLICADOR"))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isCreated())
@@ -331,7 +331,7 @@ class CursoFeaturesTest {
                 2007L);
 
         mockMvc.perform(patch("/api/cursos/" + basicoInactivo + "/baja")
-                        .header("Authorization", token(2007, "PROFESSOR")))
+                        .header("Authorization", token(2007, "PUBLICADOR")))
                 .andExpect(status().isNoContent());
 
         Map<String, Object> body = new HashMap<>();
@@ -425,7 +425,7 @@ class CursoFeaturesTest {
         body.put("examen", examen);
 
         String response = mockMvc.perform(post("/api/cursos")
-                        .header("Authorization", token(publicadorUsuarioId, "PROFESSOR"))
+                        .header("Authorization", token(publicadorUsuarioId, "PUBLICADOR"))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isCreated())
@@ -445,7 +445,7 @@ class CursoFeaturesTest {
         body.put("duracionHoras", 20);
 
         String response = mockMvc.perform(post("/api/cursos")
-                        .header("Authorization", token(publicadorUsuarioId, "PROFESSOR"))
+                        .header("Authorization", token(publicadorUsuarioId, "PUBLICADOR"))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isCreated())

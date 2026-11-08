@@ -50,7 +50,7 @@ class CursoControllerTest {
         crearCurso("Curso de otro publicador", 902L, null);
 
         mockMvc.perform(get("/api/cursos").param("publicadorUsuarioId", "901")
-                        .header("Authorization", token(901L, "PROFESSOR")))
+                        .header("Authorization", token(901L, "PUBLICADOR")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2));
     }
@@ -60,7 +60,7 @@ class CursoControllerTest {
         Long id = crearCurso("Curso solitario", 903L, null);
 
         mockMvc.perform(put("/api/cursos/" + id + "/prerequisitos")
-                        .header("Authorization", token(903L, "PROFESSOR"))
+                        .header("Authorization", token(903L, "PUBLICADOR"))
                         .contentType("application/json")
                         .content("{\"prerequisitoIds\": [" + id + "]}"))
                 .andExpect(status().isConflict());
@@ -74,7 +74,7 @@ class CursoControllerTest {
 
         // ahora intentamos que A requiera B, eso cierra el ciclo A -> B -> A
         mockMvc.perform(put("/api/cursos/" + cursoA + "/prerequisitos")
-                        .header("Authorization", token(904L, "PROFESSOR"))
+                        .header("Authorization", token(904L, "PUBLICADOR"))
                         .contentType("application/json")
                         .content("{\"prerequisitoIds\": [" + cursoB + "]}"))
                 .andExpect(status().isConflict())
@@ -82,7 +82,7 @@ class CursoControllerTest {
 
         // y A se quedo sin prerequisitos, el rechazo no dejo nada a medias
         mockMvc.perform(get("/api/cursos/" + cursoA)
-                        .header("Authorization", token(904L, "PROFESSOR")))
+                        .header("Authorization", token(904L, "PUBLICADOR")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.prerequisitoIds.length()").value(0));
     }
@@ -98,7 +98,7 @@ class CursoControllerTest {
         body.put("duracionHoras", 20);
 
         String response = mockMvc.perform(post("/api/cursos")
-                        .header("Authorization", token(publicadorUsuarioId, "PROFESSOR"))
+                        .header("Authorization", token(publicadorUsuarioId, "PUBLICADOR"))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isCreated())

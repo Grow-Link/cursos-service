@@ -44,6 +44,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest(properties = {
         "CLAUDE_API_KEY=",
         "auth.mode=oidc",
+        // esta prueba es de la VALIDACION del token, no de como se resuelve la identidad: el
+        // usuarioId y el rol se leen de los claims, como antes de que existiera la consulta a usuarios-service
+        "auth.identity-source=claims",
         "auth.oidc.issuer-uri=" + TokenOidcTest.EMISOR,
         "auth.oidc.audience=" + TokenOidcTest.AUDIENCIA,
         // nunca se consulta: el decodificador de la prueba trae la llave publica puesta

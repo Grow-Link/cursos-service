@@ -32,6 +32,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "CLAUDE_API_KEY=",
         "auth.mode=oidc",
         "auth.multi-tenant=true",
+        // esta prueba es de la VALIDACION del token, no de como se resuelve la identidad: el
+        // usuarioId y el rol se leen de los claims, como antes de que existiera la consulta a usuarios-service
+        "auth.identity-source=claims",
         // las dos formas que Entra puede poner en `aud` segun como este configurada la aplicacion
         "auth.oidc.audience=api://growlink-cursos," + TokenOidcMultiTenantTest.CLIENT_ID,
         // sin AUTH_ISSUER_URI: en multi-inquilino no hay un emisor fijo que configurar

@@ -46,6 +46,24 @@ auth:
     # opaco, no un numero), y de donde salen los roles
     claims-usuario: ${AUTH_CLAIMS_USUARIO:growlink_uid,uid,sub}
     claims-roles: ${AUTH_CLAIMS_ROLES:roles,rol,groups}
+  # DE DONDE SALE LA IDENTIDAD DE GROWLINK (usuarioId numerico + rol). El token de Entra no la trae: su `sub` es
+  # un texto opaco, no el numero con el que estan hechas las tablas de este servicio, y el rol es cosa de
+  # GrowLink, no de Microsoft.
+  #   usuarios-service (por defecto): se le pregunta a usuarios-service, que es su dueno
+  #     (GET /api/usuarios/me reenviando el mismo token). Ver ClienteDeUsuariosService.
+  #   claims: se lee del propio token. Se conserva para desarrollo y pruebas sin usuarios-service levantado; en
+  #     produccion no se quiere, porque ahi el rol lo diria el propio token.
+  # Cualquier otro valor no deja arrancar. En modo legacy esto no se usa para nada.
+  identity-source: ${AUTH_IDENTITY_SOURCE:usuarios-service}
+  usuarios-service:
+    # obligatoria con identity-source=usuarios-service (si falta, el servicio no arranca)
+    url: ${USUARIOS_SERVICE_URL:}
+  # cuanto se guarda una identidad ya resuelta, para no consultar a usuarios-service en CADA peticion. Es el
+  # retraso con el que este servicio se entera de un cambio de rol, asi que corto. Una entrada nunca vive mas que
+  # el `exp` de su token
+  identity-cache-seconds: ${AUTH_IDENTITY_CACHE_SECONDS:60}
+  # tope de identidades guardadas a la vez, para que una lluvia de tokens distintos no haga crecer la memoria
+  identity-cache-max: ${AUTH_IDENTITY_CACHE_MAX:10000}
 
 # Solo lo lee TokenService, que solo existe en modo legacy: se sigue exigiendo (si falta, el servicio no arranca
 # en legacy, que es lo que se quiere), pero en modo oidc nadie lo pide y no hace falta configurarlo.
