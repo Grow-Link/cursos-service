@@ -67,6 +67,24 @@ Todo `/api/**` requiere autenticacion.
 - Ver cursos, el catalogo de habilidades y el catalogo general: cualquier
   usuario autenticado.
 
+### Proveedor de identidad: `AUTH_MODE`
+
+El interruptor `AUTH_MODE` (ver `SecurityConfig`) elige de donde viene la identidad de quien llama. Las dos
+cadenas protegen exactamente lo mismo y dejan el mismo usuario autenticado (`usuarioId` + roles), asi que los
+controllers y las reglas de roles no cambian:
+
+- `legacy` (valor por defecto): el JWT compartido con auth-service / usuarios-service (`GROWLINK_JWT_SECRET`),
+  tal como funciona hoy. Mientras no se cambie a mano, nada de lo actual cambia.
+- `oidc`: el token lo emite y firma el proveedor de identidad (Microsoft Entra ID) y este servicio solo lo valida
+  como resource server: firma con las llaves publicas del emisor, emisor (`AUTH_ISSUER_URI`), audiencia
+  (`AUTH_AUDIENCE`) y vigencia. Si el token falta, vencio, viene de otro emisor, es para otra aplicacion o esta
+  mal firmado, responde `401` y lo deja en el log (`RegistroDeRechazosOidc`). En este modo el servicio ya no
+  necesita `GROWLINK_JWT_SECRET`.
+
+El id numerico de usuario de GrowLink se busca en los claims de `AUTH_CLAIMS_USUARIO` (por defecto
+`growlink_uid,uid,sub`), porque el `sub` de Entra ID es un texto opaco y no un numero; los roles salen de
+`AUTH_CLAIMS_ROLES` (por defecto `roles,rol,groups`). Ver `ConvertidorDeTokenOidc`.
+
 ## Documentación interactiva (Swagger UI)
 
 Con el servicio corriendo: **http://localhost:8086/swagger-ui.html**
@@ -335,6 +353,15 @@ lo hace asi.
 | `ROADMAP_AI_MODEL` | Opcional, el modelo de Claude a usar (por defecto `claude-sonnet-5-5`) |
 | `ROADMAP_LIMITE_GENERACIONES` | Opcional, cuantos roadmaps puede pedir una persona en la ventana (por defecto `10`; `0` lo apaga) |
 | `ROADMAP_LIMITE_VENTANA_MINUTOS` | Opcional, el largo de esa ventana en minutos (por defecto `10`) |
+| `ROADMAP_IA_CORTACIRCUITO_FALLOS` | Opcional, fallos seguidos de la IA que abren el cortacircuito (por defecto `3`) |
+| `ROADMAP_IA_CORTACIRCUITO_ESPERA_SEGUNDOS` | Opcional, cuanto se deja de llamar a la IA al abrirse (por defecto `60`) |
+| `ROADMAP_IA_CORTACIRCUITO_DEMORA_SEGUNDOS` | Opcional, a partir de cuanto una respuesta de la IA cuenta como fallo (por defecto `10`) |
+| `LIMITE_IP_MAXIMO_POR_MINUTO` | Opcional, peticiones por IP y por ventana antes del `429` (por defecto `300`; `0` lo apaga) |
+| `LIMITE_IP_VENTANA_SEGUNDOS` | Opcional, el largo de esa ventana en segundos (por defecto `60`) |
+| `AUTH_MODE` | Opcional, `legacy` (por defecto, el JWT compartido) u `oidc` (token del proveedor de identidad) |
+| `AUTH_ISSUER_URI` | Obligatoria con `AUTH_MODE=oidc`: quien firma los tokens, p.ej. `https://login.microsoftonline.com/<tenant>/v2.0` |
+| `AUTH_AUDIENCE` | Obligatoria con `AUTH_MODE=oidc`: para que aplicacion tienen que venir, p.ej. `api://growlink-cursos` |
+| `AUTH_JWK_SET_URI` | Opcional con `AUTH_MODE=oidc`: donde estan las llaves publicas. Si no se pone, se descubren desde el emisor |
 
 ### Salud, trazabilidad y limite de uso
 
@@ -345,6 +372,16 @@ lo hace asi.
   vuelve en la respuesta y sale en cada linea del log como `[rid=...]`.
 - **Limite de roadmaps**: pedir mas de `ROADMAP_LIMITE_GENERACIONES` en `ROADMAP_LIMITE_VENTANA_MINUTOS` responde
   `429` con `Retry-After` (segundos) y un mensaje que dice cuanto esperar. Cada replica cuenta por su lado.
+- **Limite por IP** (`LimitePorIpFilter`): mas de `LIMITE_IP_MAXIMO_POR_MINUTO` peticiones de la misma IP dentro de
+  la ventana responden `429` con `Retry-After`, en cualquier endpoint y antes de la seguridad y de la base de datos.
+  La IP se toma del primer valor de `X-Forwarded-For` (delante hay un balanceador) y si no llega, de la del socket.
+  Cada replica cuenta por su lado, asi que con N replicas el tope real es de hasta N veces el configurado.
+- **Cortacircuito de la IA** (`CortacircuitoDeLaIa`): tras `ROADMAP_IA_CORTACIRCUITO_FALLOS` fallos seguidos de la
+  IA (error, demora de mas de `ROADMAP_IA_CORTACIRCUITO_DEMORA_SEGUNDOS`, o una respuesta que no es una ruta valida
+  del catalogo) se deja de llamarla durante `ROADMAP_IA_CORTACIRCUITO_ESPERA_SEGUNDOS`; al cumplirse ese tiempo
+  pasa UNA peticion de prueba, que la cierra si funciona y la vuelve a abrir si falla. Mientras esta abierto el
+  roadmap lo arma el algoritmo de respaldo y la respuesta lo dice en `generadoPor: "RESPALDO"`. Una falla de la IA
+  nunca sale como `5xx`.
 - **Metricas** (`GET /actuator/metrics/<nombre>`, **solo con token de ADMIN**; cuentan por replica y desde que arranco):
 
   | Medida | Que responde |
@@ -354,6 +391,9 @@ lo hace asi.
   | `growlink.roadmap.ia.llamadas` (`resultado` = `respondio`, `fallo`, `no_viable`) y `growlink.roadmap.ia.duracion` | Como le fue a Claude y cuanto tardo |
   | `growlink.roadmap.ia.propuestas` (`resultado` = `aceptada`, `corregida`, `excede_horas`, `invalida`) | Cuanto de lo que propone la IA pasa la validacion del servidor |
   | `growlink.roadmap.limite.rechazos` | Cuantas peticiones freno el tope por persona |
+  | `growlink.roadmap.ia.cortacircuito.estado` | Si la IA se esta usando: `0` cerrado, `1` medio abierto (peticion de prueba), `2` abierto |
+  | `growlink.roadmap.ia.cortacircuito.rechazos` | Cuantas veces no se llamo a la IA por estar el cortacircuito abierto |
+  | `growlink.http.limite-ip.rechazos` | Cuantas peticiones freno el tope por IP |
 
   Ejemplo: `curl -H "Authorization: Bearer <token de admin>" "http://localhost:8086/actuator/metrics/growlink.roadmap.generaciones?tag=fuente:RESPALDO"`.
 

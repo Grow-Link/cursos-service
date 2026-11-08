@@ -40,6 +40,7 @@ public class RoadmapService {
     private final RoadmapAiClient aiClient;
     private final PropuestaCache propuestaCache;
     private final MetricasDeRoadmap metricas;
+    private final CortacircuitoDeLaIa cortacircuito;
     private final int maxAreas;
     private final Object[] cerrojos = new Object[CERROJOS];
 
@@ -48,7 +49,7 @@ public class RoadmapService {
                            PreguntaExamenRepository preguntaExamenRepository,
                            CursoCompletadoRepository completadoRepository, MetaValidator metaValidator,
                            FallbackTopologicoRoadmapAiClient fallbackClient, PropuestaCache propuestaCache,
-                           MetricasDeRoadmap metricas,
+                           MetricasDeRoadmap metricas, CortacircuitoDeLaIa cortacircuito,
                            @Value("${roadmap.plan.max-areas:1}") int maxAreas,
                            ObjectProvider<ClaudeRoadmapAiClient> claudeClientProvider) {
         this.cursoRepository = cursoRepository;
@@ -61,6 +62,7 @@ public class RoadmapService {
         this.fallbackClient = fallbackClient;
         this.propuestaCache = propuestaCache;
         this.metricas = metricas;
+        this.cortacircuito = cortacircuito;
         this.maxAreas = maxAreas;
         Arrays.setAll(cerrojos, i -> new Object());
         // si CLAUDE_API_KEY esta configurada, ese bean existe y se prefiere;
@@ -76,6 +78,28 @@ public class RoadmapService {
     }
 
     private record Generado(PropuestaRoadmap propuesta, FuenteRoadmap fuente) {
+    }
+
+    // Lo que contesto la IA, con su llamada del cortacircuito todavia sin cerrar: quien valida la propuesta contra
+    // el catalogo real es el que sabe si esto cuenta como exito o como fallo (ver CortacircuitoDeLaIa).
+    // Sin llave de Claude no hay cortacircuito que cerrar (llamada es null) y los avisos no hacen nada.
+    private record RespuestaIa(PropuestaRoadmap propuesta, CortacircuitoDeLaIa.Llamada llamada) {
+
+        void exito() {
+            if (llamada != null) {
+                llamada.exito();
+            }
+        }
+
+        void invalida() {
+            if (llamada != null) {
+                llamada.respuestaInvalida();
+            }
+        }
+
+        long nanos() {
+            return llamada == null ? 0L : llamada.nanos();
+        }
     }
 
     // sin tiempo: la ruta no tiene limite de horas
@@ -371,69 +395,107 @@ public class RoadmapService {
             metricas.cache(false);
         }
 
-        PropuestaRoadmap propuesta;
+        RespuestaIa respuesta;
         try {
-            propuesta = preguntarALaIa(catalogoDisponible, contexto, hayIa);
+            respuesta = preguntarALaIa(catalogoDisponible, contexto, hayIa);
         } catch (RoadmapAiException e) {
             // OJO: si la IA dijo que la meta no es viable (MetaNoViableException) NO se cae al respaldo,
             // se le explica a la persona. El respaldo solo entra cuando la IA fallo, no cuando dijo que no
             log.warn("Fallo la IA generando el roadmap, se usa el modo de respaldo: {}", e.getMessage());
-            return new Generado(fallbackClient.generarRuta(catalogoDisponible, contexto), FuenteRoadmap.RESPALDO);
+            return conRespaldo(catalogoDisponible, contexto);
         }
+        // cortacircuito abierto: no se llamo a la IA (ya quedo contado y escrito en el log)
+        if (respuesta == null) {
+            return conRespaldo(catalogoDisponible, contexto);
+        }
+        PropuestaRoadmap propuesta = respuesta.propuesta();
 
         if (esPropuestaValida(propuesta, catalogoDisponible)) {
             int horas = horasDe(propuesta, catalogoDisponible);
             if (presupuesto == null || horas <= presupuesto) {
+                respuesta.exito();
                 contarPropuesta(hayIa, "aceptada");
                 return deLaIa(clave, propuesta, hayIa);
             }
-            // la IA se paso del tiempo: se le avisa cuanto sumo y se le pide una sola vez que lo corrija
+            // la IA se paso del tiempo: se le avisa cuanto sumo y se le pide una sola vez que lo corrija.
+            // Para el cortacircuito esto NO es un fallo: la ruta es del catalogo real, solo no cuadra el tiempo
+            respuesta.exito();
             log.warn("La ruta de la IA suma {} h y el tope es {} h", horas, presupuesto);
             contarPropuesta(hayIa, "excede_horas");
             if (hayIa) {
                 try {
-                    PropuestaRoadmap corregida = preguntarALaIa(catalogoDisponible, contexto.conCorreccion(
+                    RespuestaIa corregida = preguntarALaIa(catalogoDisponible, contexto.conCorreccion(
                             "Tu propuesta anterior sumaba " + horas + " horas y el tope es " + presupuesto
                                     + ". Devuelve una ruta nueva que sume " + presupuesto + " horas o menos."), true);
-                    if (esPropuestaValida(corregida, catalogoDisponible) && horasDe(corregida, catalogoDisponible) <= presupuesto) {
-                        contarPropuesta(true, "corregida");
-                        return deLaIa(clave, corregida, true);
+                    if (corregida != null) {
+                        if (esPropuestaValida(corregida.propuesta(), catalogoDisponible)
+                                && horasDe(corregida.propuesta(), catalogoDisponible) <= presupuesto) {
+                            corregida.exito();
+                            contarPropuesta(true, "corregida");
+                            return deLaIa(clave, corregida.propuesta(), true);
+                        }
+                        corregida.invalida();
+                        contarPropuesta(true, "invalida");
                     }
-                    contarPropuesta(true, "invalida");
                 } catch (RoadmapAiException e) {
                     log.warn("Fallo la IA al corregir el tiempo: {}", e.getMessage());
                 }
             }
             log.warn("Se usa el modo de respaldo, que arma la ruta dentro del tiempo");
-            return new Generado(fallbackClient.generarRuta(catalogoDisponible, contexto), FuenteRoadmap.RESPALDO);
+            return conRespaldo(catalogoDisponible, contexto);
         }
         log.warn("La respuesta de la IA no es un subconjunto valido del catalogo disponible/prerequisitos reales "
                 + "(incluye algo inventado, repetido, dado de baja o ya completado por esta persona), "
                 + "se usa el modo de respaldo");
+        // una respuesta que llego bien pero no sirve cuenta como fallo del cortacircuito: si la IA se pone a
+        // contestar cualquier cosa, deja de tener sentido preguntarle
+        respuesta.invalida();
         contarPropuesta(hayIa, "invalida");
+        return conRespaldo(catalogoDisponible, contexto);
+    }
+
+    // el roadmap que arma el algoritmo de respaldo: en memoria, sin salir a internet, y siempre una ruta valida.
+    // Es la unica salida cuando la IA no sirve, y por eso una falla de la IA nunca termina en 5xx
+    private Generado conRespaldo(List<CursoGrafoNodo> catalogoDisponible, ContextoRoadmap contexto) {
         return new Generado(fallbackClient.generarRuta(catalogoDisponible, contexto), FuenteRoadmap.RESPALDO);
     }
 
-    // la llamada a la IA, midiendo como le fue y cuanto tardo. Si el aiClient es el respaldo (sin llave) no es una
-    // llamada a la IA y no se cuenta. Lo que lance (fallo, o "la meta no es viable") se vuelve a lanzar tal cual
-    private PropuestaRoadmap preguntarALaIa(List<CursoGrafoNodo> catalogo, ContextoRoadmap contexto, boolean hayIa) {
-        long inicio = System.nanoTime();
+    // La llamada a la IA, pasando por el cortacircuito y midiendo como le fue y cuanto tardo. Si el aiClient es el
+    // respaldo (sin llave) no es una llamada a la IA: no se cuenta ni se protege. Lo que lance (fallo, o "la meta
+    // no es viable") se vuelve a lanzar tal cual.
+    // Devuelve null si el cortacircuito esta abierto: ahi NO se llama a la IA y el roadmap lo arma el respaldo.
+    private RespuestaIa preguntarALaIa(List<CursoGrafoNodo> catalogo, ContextoRoadmap contexto, boolean hayIa) {
+        if (!hayIa) {
+            return new RespuestaIa(aiClient.generarRuta(catalogo, contexto), null);
+        }
+        CortacircuitoDeLaIa.Llamada llamada = cortacircuito.iniciar();
+        if (llamada == null) {
+            log.warn("Cortacircuito de la IA ABIERTO: no se la llama y el roadmap lo arma el respaldo");
+            metricas.cortacircuitoRechazo();
+            return null;
+        }
         try {
             PropuestaRoadmap propuesta = aiClient.generarRuta(catalogo, contexto);
-            if (hayIa) {
-                metricas.llamadaIa("respondio", System.nanoTime() - inicio);
-            }
-            return propuesta;
+            metricas.llamadaIa("respondio", llamada.nanos());
+            // el exito (o el fallo por haber tardado demasiado) lo reporta quien valide la propuesta, ver RespuestaIa
+            return new RespuestaIa(propuesta, llamada);
         } catch (RoadmapAiException e) {
-            if (hayIa) {
-                metricas.llamadaIa("fallo", System.nanoTime() - inicio);
-            }
+            metricas.llamadaIa("fallo", llamada.nanos());
+            llamada.fallo(e);
             throw e;
         } catch (MetaNoViableException e) {
-            if (hayIa) {
-                metricas.llamadaIa("no_viable", System.nanoTime() - inicio);
-            }
+            // la IA hizo su trabajo: contesto que con este catalogo esa meta no se puede. No es una falla suya
+            metricas.llamadaIa("no_viable", llamada.nanos());
+            llamada.exito();
             throw e;
+        } catch (RuntimeException e) {
+            // red a medias, un NullPointerException, lo que sea: una falla de la IA NUNCA puede salir como 5xx,
+            // asi que se vuelve una RoadmapAiException y acaba en el respaldo como las demas
+            log.warn("La IA fallo de forma inesperada ({}): cuenta como fallo y se usa el respaldo",
+                    e.getClass().getSimpleName());
+            metricas.llamadaIa("fallo", llamada.nanos());
+            llamada.fallo(e);
+            throw new RoadmapAiException("La IA fallo de forma inesperada: " + e.getMessage(), e);
         }
     }
 
