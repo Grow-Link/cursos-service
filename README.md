@@ -85,6 +85,77 @@ El id numerico de usuario de GrowLink se busca en los claims de `AUTH_CLAIMS_USU
 `growlink_uid,uid,sub`), porque el `sub` de Entra ID es un texto opaco y no un numero; los roles salen de
 `AUTH_CLAIMS_ROLES` (por defecto `roles,rol,groups`). Ver `ConvertidorDeTokenOidc`.
 
+#### Multi-inquilino: `AUTH_MULTI_TENANT`
+
+La app se registra en Entra como **multi-inquilino** (cuentas de cualquier directorio organizacional y cuentas
+personales de Microsoft). Con ese registro el `iss` del token **no es uno fijo**: trae el inquilino de quien
+inicia sesion. Comparar el `iss` contra un solo emisor rechazaria a casi todo el mundo, y aceptar cualquier `iss`
+seria regalar el servicio (bastaria con que alguien levantara su propio emisor). El punto medio es
+`AUTH_MULTI_TENANT`:
+
+- `false` (valor por defecto): un solo emisor, el de `AUTH_ISSUER_URI`. Es el comportamiento de siempre y no
+  cambia en nada.
+- `true`: se acepta cualquier emisor que encaje **entero** en
+  `https://login.microsoftonline.com/<guid-del-inquilino>/v2.0` y, ademas, se exige que el claim `tid` sea ese
+  **mismo** GUID. Ver `ValidadorDeEmisorMultiTenant`.
+
+Lo que eso rechaza, y que es justo el ataque que importa cuando se abre el conjunto de emisores:
+
+| `iss` que llega | Por que no entra |
+|---|---|
+| `http://login.microsoftonline.com/<guid>/v2.0` | No es `https` |
+| `https://login.microsoftonline.com.evil.com/<guid>/v2.0` | Otro host que solo *empieza* igual (lo registra cualquiera) |
+| `https://login.microsoftonline.com/<guid>` | Sin `/v2.0` |
+| `https://evil.com/?x=https://login.microsoftonline.com/<guid>/v2.0` | El emisor bueno metido dentro de otra cosa: el patron esta anclado |
+| `https://login.microsoftonline.com/common/v2.0` | `/common` y `/organizations` son por donde se *pide* el token, nunca el emisor de uno ya emitido |
+| `iss` del inquilino A con `tid` del B | El token dice ser de un inquilino distinto al de su emisor |
+
+Las cuentas personales de Microsoft no necesitan nada aparte: llegan con el inquilino
+`9188040d-6c67-4c5b-b112-36a304b66dad`, que encaja en el patron como cualquier otro.
+
+`AUTH_ALLOWED_TENANTS` (opcional, solo en multi-inquilino) acota la cosa a una lista de GUIDs de inquilino
+separados por comas: sirve para una prueba piloto o para un despliegue limitado a unas organizaciones. Vacia
+significa "cualquier inquilino de Entra", que es lo que quiere una app multi-inquilino de verdad. Un GUID mal
+escrito en esa lista **no deja arrancar** el servicio, para que no se quede gente fuera en silencio.
+
+En multi-inquilino las llaves publicas **no** se pueden descubrir a partir del emisor (hay uno por inquilino),
+asi que `AUTH_JWKS_URI` toma por defecto el juego comun de Entra,
+`https://login.microsoftonline.com/common/discovery/v2.0/keys`. Sigue siendo configurable.
+
+`AUTH_AUDIENCE` acepta **varias audiencias separadas por comas** y el token pasa si su `aud` coincide con
+alguna: Entra pone `api://<client-id>` o el `<client-id>` pelado segun como este configurada la aplicacion y
+segun quien pida el token, asi que lo normal es poner las dos formas. Con el emisor ya no siendo uno solo, esta
+es la comprobacion que de verdad delimita "para quien es este token".
+
+Lo demas no cambia al pasar a multi-inquilino: solo RS256, `exp` y `sub` obligatorios, la audiencia verificada,
+el interruptor `AUTH_MODE` (con `legacy` por defecto) y el fail-fast si la configuracion no tiene sentido.
+
+#### Ejemplo de configuracion para Entra (multi-inquilino)
+
+En el registro de la aplicacion en Entra: *Supported account types* = **Accounts in any organizational directory
+and personal Microsoft accounts**, y en *Expose an API* un App ID URI `api://<client-id>` con su scope.
+
+```bash
+AUTH_MODE=oidc
+AUTH_MULTI_TENANT=true
+# las dos formas que Entra puede poner en `aud`, por si acaso
+AUTH_AUDIENCE=api://11112222-3333-4444-5555-666677778888,11112222-3333-4444-5555-666677778888
+# opcional: solo estas organizaciones. Vacia o sin poner = cualquier inquilino de Entra
+AUTH_ALLOWED_TENANTS=
+# opcional: por defecto ya es el juego comun de Entra en multi-inquilino
+# AUTH_JWKS_URI=https://login.microsoftonline.com/common/discovery/v2.0/keys
+# en modo oidc NO hace falta AUTH_ISSUER_URI (no hay un emisor fijo) ni GROWLINK_JWT_SECRET
+```
+
+Y la misma app en **un solo inquilino** (lo de antes, por si se quiere volver):
+
+```bash
+AUTH_MODE=oidc
+AUTH_MULTI_TENANT=false
+AUTH_ISSUER_URI=https://login.microsoftonline.com/<guid-del-inquilino>/v2.0
+AUTH_AUDIENCE=api://11112222-3333-4444-5555-666677778888
+```
+
 ## Documentación interactiva (Swagger UI)
 
 Con el servicio corriendo: **http://localhost:8086/swagger-ui.html**
@@ -359,9 +430,11 @@ lo hace asi.
 | `LIMITE_IP_MAXIMO_POR_MINUTO` | Opcional, peticiones por IP y por ventana antes del `429` (por defecto `300`; `0` lo apaga) |
 | `LIMITE_IP_VENTANA_SEGUNDOS` | Opcional, el largo de esa ventana en segundos (por defecto `60`) |
 | `AUTH_MODE` | Opcional, `legacy` (por defecto, el JWT compartido) u `oidc` (token del proveedor de identidad) |
-| `AUTH_ISSUER_URI` | Obligatoria con `AUTH_MODE=oidc`: quien firma los tokens, p.ej. `https://login.microsoftonline.com/<tenant>/v2.0` |
-| `AUTH_AUDIENCE` | Obligatoria con `AUTH_MODE=oidc`: para que aplicacion tienen que venir, p.ej. `api://growlink-cursos` |
-| `AUTH_JWK_SET_URI` | Opcional con `AUTH_MODE=oidc`: donde estan las llaves publicas. Si no se pone, se descubren desde el emisor |
+| `AUTH_MULTI_TENANT` | Opcional con `AUTH_MODE=oidc`: `false` (por defecto) un solo emisor; `true` cualquier inquilino de Entra, validando el patron del `iss` y el claim `tid` |
+| `AUTH_ISSUER_URI` | Obligatoria con `AUTH_MODE=oidc` **y** `AUTH_MULTI_TENANT=false`: quien firma los tokens, p.ej. `https://login.microsoftonline.com/<tenant>/v2.0`. En multi-inquilino no se usa |
+| `AUTH_AUDIENCE` | Obligatoria con `AUTH_MODE=oidc`: para que aplicacion tienen que venir. Acepta **varias separadas por comas** (`api://<client-id>` y el `<client-id>` pelado), y pasa si el `aud` coincide con alguna |
+| `AUTH_ALLOWED_TENANTS` | Opcional, solo en multi-inquilino: GUIDs de inquilino separados por comas. Vacia = cualquier inquilino de Entra. Un GUID mal escrito no deja arrancar |
+| `AUTH_JWKS_URI` | Opcional con `AUTH_MODE=oidc`: donde estan las llaves publicas. En multi-inquilino, por defecto las de `/common`; con un solo inquilino, se descubren desde el emisor. (`AUTH_JWK_SET_URI` se sigue aceptando como nombre viejo) |
 
 ### Salud, trazabilidad y limite de uso
 

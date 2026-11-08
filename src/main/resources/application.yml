@@ -21,11 +21,27 @@ spring:
 # Para pasar a oidc no hay que tocar codigo: AUTH_MODE=oidc y las dos variables del emisor y la audiencia.
 auth:
   mode: ${AUTH_MODE:legacy}
+  # MULTI-INQUILINO. La app esta registrada en Entra para cuentas de cualquier directorio organizacional y
+  # cuentas personales de Microsoft, asi que el `iss` del token trae el inquilino de QUIEN inicia sesion y no uno
+  # fijo. Con false (por defecto) se compara el emisor contra AUTH_ISSUER_URI, como siempre. Con true se acepta
+  # cualquier emisor que encaje ENTERO en el patron de un inquilino de Entra
+  # (https://login.microsoftonline.com/<guid>/v2.0) y se exige que el claim `tid` sea ese mismo GUID; con eso se
+  # caen http://, otros hosts y los parecidos tipo login.microsoftonline.com.evil.com.
+  # Ver ValidadorDeEmisorMultiTenant.
+  multi-tenant: ${AUTH_MULTI_TENANT:false}
   oidc:
+    # obligatorio solo con multi-tenant: false
     issuer-uri: ${AUTH_ISSUER_URI:}
+    # una o varias separadas por comas: Entra pone en `aud` el api://<client-id> o el <client-id> pelado segun
+    # como este configurada la aplicacion, asi que lo normal es poner las dos formas
     audience: ${AUTH_AUDIENCE:}
-    # opcional: si no se pone, las llaves publicas se descubren a partir del emisor al arrancar
-    jwk-set-uri: ${AUTH_JWK_SET_URI:}
+    # opcional, solo en multi-inquilino: GUIDs de inquilino separados por comas. Vacia = cualquier inquilino de
+    # Entra (que es lo que quiere una app multi-inquilino de verdad)
+    allowed-tenants: ${AUTH_ALLOWED_TENANTS:}
+    # opcional: donde estan las llaves publicas. En multi-inquilino, por defecto las de /common (no se pueden
+    # descubrir desde el emisor, porque hay uno por inquilino); con un solo inquilino, se descubren a partir del
+    # emisor al arrancar. AUTH_JWK_SET_URI se sigue aceptando como nombre viejo de la misma variable
+    jwk-set-uri: ${AUTH_JWKS_URI:${AUTH_JWK_SET_URI:}}
     # claims donde puede venir el id numerico de usuario de GrowLink, en orden (el sub de Entra ID es un texto
     # opaco, no un numero), y de donde salen los roles
     claims-usuario: ${AUTH_CLAIMS_USUARIO:growlink_uid,uid,sub}

@@ -3,6 +3,8 @@ package com.growlink.cursos.infrastructure.config;
 import com.growlink.cursos.infrastructure.security.ConvertidorDeTokenOidc;
 import com.growlink.cursos.infrastructure.security.RegistroDeRechazosOidc;
 import com.growlink.cursos.infrastructure.security.ValidadorDeAudiencia;
+import com.growlink.cursos.infrastructure.security.ValidadorDeClaimsObligatorios;
+import com.growlink.cursos.infrastructure.security.ValidadorDeEmisorMultiTenant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,6 +23,7 @@ import org.springframework.security.oauth2.jwt.JwtIssuerValidator;
 import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -29,41 +32,77 @@ import java.util.List;
 // el valor por defecto.
 //
 // Todo sale de variables de entorno (ver application.yml):
-//   AUTH_ISSUER_URI    quien firma los tokens que se aceptan, p.ej. https://login.microsoftonline.com/<tenant>/v2.0
-//   AUTH_AUDIENCE      para que aplicacion tienen que venir, p.ej. api://growlink-cursos
-//   AUTH_JWK_SET_URI   (opcional) donde estan las llaves publicas. Si no se pone, se descubren a partir del
-//                      emisor (una peticion al arrancar, al documento de configuracion OpenID del emisor)
+//   AUTH_MULTI_TENANT     false (por defecto) = un solo emisor, el de AUTH_ISSUER_URI. true = la aplicacion esta
+//                         registrada en Entra como multi-inquilino y el emisor trae el inquilino de quien inicia
+//                         sesion, asi que se valida por patron + claim tid (ver ValidadorDeEmisorMultiTenant)
+//   AUTH_ISSUER_URI       quien firma los tokens. Obligatoria solo con AUTH_MULTI_TENANT=false
+//   AUTH_AUDIENCE         para que aplicacion tienen que venir. Acepta varias separadas por comas, porque Entra
+//                         pone api://<client-id> o el <client-id> pelado segun la configuracion
+//   AUTH_ALLOWED_TENANTS  (opcional, solo multi-inquilino) GUIDs de inquilino separados por comas. Vacia =
+//                         cualquier inquilino de Entra
+//   AUTH_JWKS_URI         (opcional) donde estan las llaves publicas. Con multi-inquilino, por defecto las de
+//                         /common; con un solo inquilino, se descubren a partir del emisor
 @Configuration
 @ConditionalOnProperty(name = "auth.mode", havingValue = "oidc")
 public class AutenticacionOidcConfig {
 
     private static final Logger log = LoggerFactory.getLogger(AutenticacionOidcConfig.class);
 
-    // Lo que se le exige a cada token: que no este vencido (ni usado antes de tiempo), que lo firme el emisor
-    // configurado y que venga dirigido a este servicio. La firma la comprueba el decodificador con las llaves
-    // publicas del emisor. Es un bean propio para que se pueda probar sin conexion: la prueba arma el
-    // decodificador con una llave generada en la propia prueba y le pone ESTAS mismas reglas.
+    // el juego de llaves con el que Entra firma para todos los inquilinos (el valor por defecto en
+    // multi-inquilino; AUTH_JWKS_URI lo puede cambiar)
+    static final String JWKS_COMUN_DE_ENTRA = "https://login.microsoftonline.com/common/discovery/v2.0/keys";
+
+    // Lo que se le exige a cada token: vigencia, los claims sin los que no se puede usar, de quien viene y para
+    // quien es. La firma la comprueba el decodificador con las llaves publicas del emisor. Es un bean propio para
+    // que se pueda probar sin conexion: la prueba arma el decodificador con una llave generada en la propia
+    // prueba y le pone ESTAS mismas reglas.
+    //
+    // Lo unico que cambia entre un modo y otro es COMO se comprueba el emisor; todo lo demas es identico, asi que
+    // con AUTH_MULTI_TENANT=false el comportamiento es exactamente el de antes.
     @Bean
-    public OAuth2TokenValidator<Jwt> validadorDeTokenOidc(@Value("${auth.oidc.issuer-uri}") String emisor,
-                                                          @Value("${auth.oidc.audience}") String audiencia) {
-        if (emisor.isBlank() || audiencia.isBlank()) {
-            throw new IllegalStateException("Con auth.mode=oidc hacen falta AUTH_ISSUER_URI y AUTH_AUDIENCE");
+    public OAuth2TokenValidator<Jwt> validadorDeTokenOidc(@Value("${auth.oidc.issuer-uri:}") String emisor,
+                                                          @Value("${auth.oidc.audience:}") String audiencia,
+                                                          @Value("${auth.multi-tenant:false}") boolean multiInquilino,
+                                                          @Value("${auth.oidc.allowed-tenants:}") String inquilinos) {
+        List<String> audiencias = lista(audiencia);
+        if (audiencias.isEmpty()) {
+            throw new IllegalStateException("Con auth.mode=oidc hace falta AUTH_AUDIENCE");
         }
-        log.info("Autenticacion en modo OIDC: se aceptan tokens de {} dirigidos a {}", emisor, audiencia);
-        return new DelegatingOAuth2TokenValidator<>(
-                new JwtTimestampValidator(),
-                new JwtIssuerValidator(emisor),
-                new ValidadorDeAudiencia(audiencia));
+
+        List<OAuth2TokenValidator<Jwt>> reglas = new ArrayList<>();
+        reglas.add(new JwtTimestampValidator());
+        reglas.add(new ValidadorDeClaimsObligatorios());
+        if (multiInquilino) {
+            // el emisor ya no es uno fijo: se valida por patron y contra el claim tid
+            reglas.add(new ValidadorDeEmisorMultiTenant(lista(inquilinos)));
+            log.info("Autenticacion en modo OIDC multi-inquilino: se aceptan tokens de cualquier inquilino de "
+                    + "Microsoft Entra ID permitido, dirigidos a {}", audiencias);
+        } else {
+            if (emisor.isBlank()) {
+                throw new IllegalStateException("Con auth.mode=oidc y AUTH_MULTI_TENANT=false hace falta "
+                        + "AUTH_ISSUER_URI (o AUTH_MULTI_TENANT=true si la app es multi-inquilino)");
+            }
+            reglas.add(new JwtIssuerValidator(emisor));
+            log.info("Autenticacion en modo OIDC: se aceptan tokens de {} dirigidos a {}", emisor, audiencias);
+        }
+        reglas.add(new ValidadorDeAudiencia(audiencias));
+        return new DelegatingOAuth2TokenValidator<>(reglas);
     }
 
+    // Llaves publicas de Entra para comprobar la firma. En multi-inquilino NO se pueden descubrir a partir del
+    // emisor (habria uno distinto por inquilino): se usan las de /common, que es el juego de llaves con el que
+    // Entra firma para todos. En un solo inquilino se sigue descubriendo desde su emisor, como antes.
+    // En los dos casos NimbusJwtDecoder acepta solo RS256.
     @Bean
     @ConditionalOnMissingBean(JwtDecoder.class)
-    public JwtDecoder jwtDecoder(@Value("${auth.oidc.issuer-uri}") String emisor,
+    public JwtDecoder jwtDecoder(@Value("${auth.oidc.issuer-uri:}") String emisor,
                                  @Value("${auth.oidc.jwk-set-uri:}") String jwkSetUri,
+                                 @Value("${auth.multi-tenant:false}") boolean multiInquilino,
                                  OAuth2TokenValidator<Jwt> validador) {
-        NimbusJwtDecoder decodificador = jwkSetUri.isBlank()
+        String llaves = !jwkSetUri.isBlank() ? jwkSetUri : (multiInquilino ? JWKS_COMUN_DE_ENTRA : "");
+        NimbusJwtDecoder decodificador = llaves.isBlank()
                 ? (NimbusJwtDecoder) JwtDecoders.fromIssuerLocation(emisor)
-                : NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
+                : NimbusJwtDecoder.withJwkSetUri(llaves).build();
         decodificador.setJwtValidator(validador);
         return decodificador;
     }
