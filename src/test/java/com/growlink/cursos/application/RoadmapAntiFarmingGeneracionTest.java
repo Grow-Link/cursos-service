@@ -82,7 +82,7 @@ class RoadmapAntiFarmingGeneracionTest {
         cuerpo.put("prerequisitoIds", prerequisitoIds);
         cuerpo.put("duracionHoras", 10);
 
-        String respuesta = mockMvc.perform(post("/api/cursos").header("Authorization", token(publicadorId, "PROFESSOR"))
+        String respuesta = mockMvc.perform(post("/api/cursos").header("Authorization", token(publicadorId, "PUBLICADOR"))
                         .contentType("application/json").content(objectMapper.writeValueAsString(cuerpo)))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);

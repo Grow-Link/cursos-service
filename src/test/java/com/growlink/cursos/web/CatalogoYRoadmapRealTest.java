@@ -165,7 +165,7 @@ class CatalogoYRoadmapRealTest {
         cuerpo.put("duracionHoras", 12);
         cuerpo.put("temario", List.of("Que es la seguridad industrial", "Riesgos comunes", "Prevencion de accidentes", "Equipo de proteccion"));
         cuerpo.put("examen", List.of(pregunta("a", "b", "c", "d"), pregunta("a", "b", "c", "d"), pregunta("a", "b", "c", "d")));
-        mockMvc.perform(post("/api/cursos").header("Authorization", token(9121L)).contentType("application/json")
+        mockMvc.perform(post("/api/cursos").header("Authorization", tokenPublicador(9121L)).contentType("application/json")
                         .content(objectMapper.writeValueAsString(cuerpo)))
                 .andExpect(status().isCreated());
 
@@ -336,7 +336,7 @@ class CatalogoYRoadmapRealTest {
     void unCursoSinExamenOQueYaNoEstaDisponibleNoSePuedeCompletar() throws Exception {
         // sin examen: se publica, pero nadie lo puede completar
         Map<String, Object> cuerpo = cuerpoCurso("Curso sin examen todavia", 9110L, null);
-        String creado = mockMvc.perform(post("/api/cursos").header("Authorization", token(9110L))
+        String creado = mockMvc.perform(post("/api/cursos").header("Authorization", tokenPublicador(9110L))
                         .contentType("application/json").content(objectMapper.writeValueAsString(cuerpo)))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
         long sinExamen = objectMapper.readTree(creado).get("id").asLong();
@@ -434,7 +434,7 @@ class CatalogoYRoadmapRealTest {
         Map<String, Object> cuerpo = cuerpoCurso(titulo, publicadorId,
                 conExamen ? List.of(pregunta("a", "b", "c", "d"), pregunta("a", "b", "c", "d"), pregunta("a", "b", "c", "d")) : null);
         cuerpo.put("habilidadIds", habilidadIds);
-        String creado = mockMvc.perform(post("/api/cursos").header("Authorization", token(publicadorId))
+        String creado = mockMvc.perform(post("/api/cursos").header("Authorization", tokenPublicador(publicadorId))
                         .contentType("application/json").content(objectMapper.writeValueAsString(cuerpo)))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
         return objectMapper.readTree(creado).get("id").asLong();
@@ -466,10 +466,18 @@ class CatalogoYRoadmapRealTest {
 
     private void crearCursoConExamen(String titulo, long publicadorId, List<Map<String, Object>> examen, int estado)
             throws Exception {
-        mockMvc.perform(post("/api/cursos").header("Authorization", token(publicadorId))
+        mockMvc.perform(post("/api/cursos").header("Authorization", tokenPublicador(publicadorId))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(cuerpoCurso(titulo, publicadorId, examen))))
                 .andExpect(status().is(estado));
+    }
+
+    // Crear un curso pide rol PUBLICADOR o ADMIN (ver CursoController.crear). En estas pruebas hay publicadores
+    // con id >= 9000, que en token(...) saldrian como USUARIO, asi que para publicar se usa este.
+    private static String tokenPublicador(long usuarioId) {
+        SecretKey key = Keys.hmacShaKeyFor(JWT_SECRET.getBytes(StandardCharsets.UTF_8));
+        return "Bearer " + Jwts.builder().subject(String.valueOf(usuarioId))
+                .claim("rol", "PUBLICADOR").signWith(key).compact();
     }
 
     private static String token(long usuarioId) {

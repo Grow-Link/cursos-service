@@ -67,6 +67,152 @@ Todo `/api/**` requiere autenticacion.
 - Ver cursos, el catalogo de habilidades y el catalogo general: cualquier
   usuario autenticado.
 
+### Proveedor de identidad: `AUTH_MODE`
+
+El interruptor `AUTH_MODE` (ver `SecurityConfig`) elige de donde viene la identidad de quien llama. Las dos
+cadenas protegen exactamente lo mismo y dejan el mismo usuario autenticado (`usuarioId` + roles), asi que los
+controllers y las reglas de roles no cambian:
+
+- `legacy` (valor por defecto): el JWT compartido con auth-service / usuarios-service (`GROWLINK_JWT_SECRET`),
+  tal como funciona hoy. Mientras no se cambie a mano, nada de lo actual cambia.
+- `oidc`: el token lo emite y firma el proveedor de identidad (Microsoft Entra ID) y este servicio solo lo valida
+  como resource server: firma con las llaves publicas del emisor, emisor (`AUTH_ISSUER_URI`), audiencia
+  (`AUTH_AUDIENCE`) y vigencia. Si el token falta, vencio, viene de otro emisor, es para otra aplicacion o esta
+  mal firmado, responde `401` y lo deja en el log (`RegistroDeRechazosOidc`). En este modo el servicio ya no
+  necesita `GROWLINK_JWT_SECRET`.
+
+El id numerico de usuario de GrowLink se busca en los claims de `AUTH_CLAIMS_USUARIO` (por defecto
+`growlink_uid,uid,sub`), porque el `sub` de Entra ID es un texto opaco y no un numero; los roles salen de
+`AUTH_CLAIMS_ROLES` (por defecto `roles,rol,groups`). Ver `ConvertidorDeTokenOidc`.
+
+#### Multi-inquilino: `AUTH_MULTI_TENANT`
+
+La app se registra en Entra como **multi-inquilino** (cuentas de cualquier directorio organizacional y cuentas
+personales de Microsoft). Con ese registro el `iss` del token **no es uno fijo**: trae el inquilino de quien
+inicia sesion. Comparar el `iss` contra un solo emisor rechazaria a casi todo el mundo, y aceptar cualquier `iss`
+seria regalar el servicio (bastaria con que alguien levantara su propio emisor). El punto medio es
+`AUTH_MULTI_TENANT`:
+
+- `false` (valor por defecto): un solo emisor, el de `AUTH_ISSUER_URI`. Es el comportamiento de siempre y no
+  cambia en nada.
+- `true`: se acepta cualquier emisor que encaje **entero** en
+  `https://login.microsoftonline.com/<guid-del-inquilino>/v2.0` y, ademas, se exige que el claim `tid` sea ese
+  **mismo** GUID. Ver `ValidadorDeEmisorMultiTenant`.
+
+Lo que eso rechaza, y que es justo el ataque que importa cuando se abre el conjunto de emisores:
+
+| `iss` que llega | Por que no entra |
+|---|---|
+| `http://login.microsoftonline.com/<guid>/v2.0` | No es `https` |
+| `https://login.microsoftonline.com.evil.com/<guid>/v2.0` | Otro host que solo *empieza* igual (lo registra cualquiera) |
+| `https://login.microsoftonline.com/<guid>` | Sin `/v2.0` |
+| `https://evil.com/?x=https://login.microsoftonline.com/<guid>/v2.0` | El emisor bueno metido dentro de otra cosa: el patron esta anclado |
+| `https://login.microsoftonline.com/common/v2.0` | `/common` y `/organizations` son por donde se *pide* el token, nunca el emisor de uno ya emitido |
+| `iss` del inquilino A con `tid` del B | El token dice ser de un inquilino distinto al de su emisor |
+
+Las cuentas personales de Microsoft no necesitan nada aparte: llegan con el inquilino
+`9188040d-6c67-4c5b-b112-36a304b66dad`, que encaja en el patron como cualquier otro.
+
+`AUTH_ALLOWED_TENANTS` (opcional, solo en multi-inquilino) acota la cosa a una lista de GUIDs de inquilino
+separados por comas: sirve para una prueba piloto o para un despliegue limitado a unas organizaciones. Vacia
+significa "cualquier inquilino de Entra", que es lo que quiere una app multi-inquilino de verdad. Un GUID mal
+escrito en esa lista **no deja arrancar** el servicio, para que no se quede gente fuera en silencio.
+
+En multi-inquilino las llaves publicas **no** se pueden descubrir a partir del emisor (hay uno por inquilino),
+asi que `AUTH_JWKS_URI` toma por defecto el juego comun de Entra,
+`https://login.microsoftonline.com/common/discovery/v2.0/keys`. Sigue siendo configurable.
+
+`AUTH_AUDIENCE` acepta **varias audiencias separadas por comas** y el token pasa si su `aud` coincide con
+alguna: Entra pone `api://<client-id>` o el `<client-id>` pelado segun como este configurada la aplicacion y
+segun quien pida el token, asi que lo normal es poner las dos formas. Con el emisor ya no siendo uno solo, esta
+es la comprobacion que de verdad delimita "para quien es este token".
+
+Lo demas no cambia al pasar a multi-inquilino: solo RS256, `exp` y `sub` obligatorios, la audiencia verificada,
+el interruptor `AUTH_MODE` (con `legacy` por defecto) y el fail-fast si la configuracion no tiene sentido.
+
+#### De donde sale la identidad: `auth.identity-source`
+
+El token de Entra **no trae la identidad de GrowLink**. Su `sub` es un texto opaco (algo como
+`AAAAAAAAAAAAAAAAAAAAAIk_bMBSKsTxQ4Y-eV3VvQ4`), no el `usuarioId` numerico con el que estan hechas las tablas de
+este servicio (`publicadorUsuarioId`, `roadmap.usuario_id`, `curso_completado.usuario_id`...), y el rol de
+GrowLink es cosa nuestra, no de Microsoft. Quien sabe las dos cosas es **usuarios-service**.
+
+- `usuarios-service` (valor por defecto): despues de validar el token (firma, emisor, audiencia, `exp`...), este
+  servicio llama a `GET {USUARIOS_SERVICE_URL}/api/usuarios/me` **reenviando el mismo token tal cual** y se queda
+  con el `usuarioId` y el `rol` de la respuesta. Ver `ClienteDeUsuariosService`.
+- `claims`: el `usuarioId` y el rol se leen del propio token (`AUTH_CLAIMS_USUARIO` / `AUTH_CLAIMS_ROLES`). Se
+  conserva para desarrollo y pruebas sin usuarios-service levantado. **En produccion no se quiere**, porque ahi
+  el rol lo diria el propio token.
+
+Cualquier otro valor **no deja arrancar** el servicio, igual que `USUARIOS_SERVICE_URL` ausente con
+`identity-source=usuarios-service`. En modo `legacy` nada de esto se usa: el `usuarioId` y el rol vienen en el JWT
+compartido, como siempre.
+
+**Cache.** Consultar a usuarios-service en *cada* peticion le doblaria el trafico y sumaria su latencia a la
+nuestra, asi que la identidad se guarda `AUTH_IDENTITY_CACHE_SECONDS` (60 s por defecto), con la clave puesta al
+SHA-256 del token (no el token: es una credencial). Dos topes a proposito:
+
+- la vigencia es el **retraso maximo** con el que este servicio se entera de un cambio de rol en
+  usuarios-service, y por eso es corta: un rol es un permiso;
+- una entrada **nunca vive mas que el `exp` de su token**, para que la cache no sea una forma de alargarlo.
+
+Hay tope de entradas (`AUTH_IDENTITY_CACHE_MAX`, 10 000) para que una lluvia de tokens distintos no haga crecer la
+memoria. De paso, la cache tapa un hueco de disponibilidad: si usuarios-service se cae, quien ya tiene su
+identidad guardada **sigue trabajando** hasta que se le venza.
+
+**Que pasa cuando usuarios-service no colabora** (tiempos limite cortos a proposito: 2 s de conexion, 3 s de
+lectura, porque esta llamada esta en el camino de cada peticion):
+
+| usuarios-service | Respuesta de este servicio | Por que |
+|---|---|---|
+| `200` con `usuarioId` | la peticion sigue | esa es la identidad, y se guarda un rato |
+| `401` | `401` | no reconoce el token; no hay nada que hacer |
+| otro `4xx` (`403`, `404`...) | `401` | el token es valido pero no se resuelve a un usuario de GrowLink. Reintentar no lo arregla, asi que no es un `503` |
+| `5xx`, timeout, no abre | `503` + `Retry-After` | el token puede estar perfecto y el problema ser nuestro: un `401` mandaria a la gente a iniciar sesion otra vez para nada |
+| `200` sin `usuarioId` | `503` | el contrato no cuadra |
+
+En los cuatro rechazos queda el motivo en el log con el `X-Request-Id` de la peticion (y ese mismo
+`X-Request-Id` se le reenvia a usuarios-service, para poder seguir una peticion de un servicio al otro). Lo que
+**nunca** pasa es aceptar el token a medias ni caer a leer los claims: eso seria dejar que el propio token diga
+su rol, que es justo lo que este modo evita.
+
+#### Quien puede publicar cursos
+
+Crear un curso (`POST /api/cursos`) pide rol **PUBLICADOR o ADMIN**; un `USUARIO` recibe `403` y no se crea nada
+(ver `AuthenticatedUser.exigirPuedePublicar`). La regla es una sola y vale en los dos modos: lo que cambia es de
+donde sale el rol — del JWT compartido en `legacy`, y de usuarios-service en `oidc`.
+
+#### Ejemplo de configuracion para Entra (multi-inquilino)
+
+En el registro de la aplicacion en Entra: *Supported account types* = **Accounts in any organizational directory
+and personal Microsoft accounts**, y en *Expose an API* un App ID URI `api://<client-id>` con su scope.
+
+```bash
+AUTH_MODE=oidc
+AUTH_MULTI_TENANT=true
+# las dos formas que Entra puede poner en `aud`, por si acaso
+AUTH_AUDIENCE=api://11112222-3333-4444-5555-666677778888,11112222-3333-4444-5555-666677778888
+# opcional: solo estas organizaciones. Vacia o sin poner = cualquier inquilino de Entra
+AUTH_ALLOWED_TENANTS=
+# opcional: por defecto ya es el juego comun de Entra en multi-inquilino
+# AUTH_JWKS_URI=https://login.microsoftonline.com/common/discovery/v2.0/keys
+# en modo oidc NO hace falta AUTH_ISSUER_URI (no hay un emisor fijo) ni GROWLINK_JWT_SECRET
+
+# la identidad de GrowLink (usuarioId numerico + rol) la resuelve usuarios-service: el token de Entra no la trae
+USUARIOS_SERVICE_URL=http://usuarios-service:8081
+# opcional: cuanto se guarda una identidad ya resuelta (es el retraso con el que se nota un cambio de rol)
+AUTH_IDENTITY_CACHE_SECONDS=60
+```
+
+Y la misma app en **un solo inquilino** (lo de antes, por si se quiere volver):
+
+```bash
+AUTH_MODE=oidc
+AUTH_MULTI_TENANT=false
+AUTH_ISSUER_URI=https://login.microsoftonline.com/<guid-del-inquilino>/v2.0
+AUTH_AUDIENCE=api://11112222-3333-4444-5555-666677778888
+```
+
 ## Documentación interactiva (Swagger UI)
 
 Con el servicio corriendo: **http://localhost:8086/swagger-ui.html**
@@ -335,6 +481,21 @@ lo hace asi.
 | `ROADMAP_AI_MODEL` | Opcional, el modelo de Claude a usar (por defecto `claude-sonnet-5-5`) |
 | `ROADMAP_LIMITE_GENERACIONES` | Opcional, cuantos roadmaps puede pedir una persona en la ventana (por defecto `10`; `0` lo apaga) |
 | `ROADMAP_LIMITE_VENTANA_MINUTOS` | Opcional, el largo de esa ventana en minutos (por defecto `10`) |
+| `ROADMAP_IA_CORTACIRCUITO_FALLOS` | Opcional, fallos seguidos de la IA que abren el cortacircuito (por defecto `3`) |
+| `ROADMAP_IA_CORTACIRCUITO_ESPERA_SEGUNDOS` | Opcional, cuanto se deja de llamar a la IA al abrirse (por defecto `60`) |
+| `ROADMAP_IA_CORTACIRCUITO_DEMORA_SEGUNDOS` | Opcional, a partir de cuanto una respuesta de la IA cuenta como fallo (por defecto `10`) |
+| `LIMITE_IP_MAXIMO_POR_MINUTO` | Opcional, peticiones por IP y por ventana antes del `429` (por defecto `300`; `0` lo apaga) |
+| `LIMITE_IP_VENTANA_SEGUNDOS` | Opcional, el largo de esa ventana en segundos (por defecto `60`) |
+| `AUTH_MODE` | Opcional, `legacy` (por defecto, el JWT compartido) u `oidc` (token del proveedor de identidad) |
+| `AUTH_MULTI_TENANT` | Opcional con `AUTH_MODE=oidc`: `false` (por defecto) un solo emisor; `true` cualquier inquilino de Entra, validando el patron del `iss` y el claim `tid` |
+| `AUTH_ISSUER_URI` | Obligatoria con `AUTH_MODE=oidc` **y** `AUTH_MULTI_TENANT=false`: quien firma los tokens, p.ej. `https://login.microsoftonline.com/<tenant>/v2.0`. En multi-inquilino no se usa |
+| `AUTH_AUDIENCE` | Obligatoria con `AUTH_MODE=oidc`: para que aplicacion tienen que venir. Acepta **varias separadas por comas** (`api://<client-id>` y el `<client-id>` pelado), y pasa si el `aud` coincide con alguna |
+| `AUTH_ALLOWED_TENANTS` | Opcional, solo en multi-inquilino: GUIDs de inquilino separados por comas. Vacia = cualquier inquilino de Entra. Un GUID mal escrito no deja arrancar |
+| `AUTH_IDENTITY_SOURCE` | Opcional con `AUTH_MODE=oidc`: `usuarios-service` (por defecto) resuelve el usuarioId y el rol en usuarios-service; `claims` los lee del token (solo desarrollo). Otro valor no deja arrancar |
+| `USUARIOS_SERVICE_URL` | Obligatoria con `AUTH_IDENTITY_SOURCE=usuarios-service`: la base de usuarios-service, p.ej. `http://usuarios-service:8081`. Si falta, el servicio no arranca |
+| `AUTH_IDENTITY_CACHE_SECONDS` | Opcional, cuanto se guarda una identidad ya resuelta (por defecto `60`). Es el retraso maximo con el que se nota un cambio de rol; nunca pasa del `exp` del token |
+| `AUTH_IDENTITY_CACHE_MAX` | Opcional, tope de identidades guardadas a la vez (por defecto `10000`) |
+| `AUTH_JWKS_URI` | Opcional con `AUTH_MODE=oidc`: donde estan las llaves publicas. En multi-inquilino, por defecto las de `/common`; con un solo inquilino, se descubren desde el emisor. (`AUTH_JWK_SET_URI` se sigue aceptando como nombre viejo) |
 
 ### Salud, trazabilidad y limite de uso
 
@@ -345,6 +506,16 @@ lo hace asi.
   vuelve en la respuesta y sale en cada linea del log como `[rid=...]`.
 - **Limite de roadmaps**: pedir mas de `ROADMAP_LIMITE_GENERACIONES` en `ROADMAP_LIMITE_VENTANA_MINUTOS` responde
   `429` con `Retry-After` (segundos) y un mensaje que dice cuanto esperar. Cada replica cuenta por su lado.
+- **Limite por IP** (`LimitePorIpFilter`): mas de `LIMITE_IP_MAXIMO_POR_MINUTO` peticiones de la misma IP dentro de
+  la ventana responden `429` con `Retry-After`, en cualquier endpoint y antes de la seguridad y de la base de datos.
+  La IP se toma del primer valor de `X-Forwarded-For` (delante hay un balanceador) y si no llega, de la del socket.
+  Cada replica cuenta por su lado, asi que con N replicas el tope real es de hasta N veces el configurado.
+- **Cortacircuito de la IA** (`CortacircuitoDeLaIa`): tras `ROADMAP_IA_CORTACIRCUITO_FALLOS` fallos seguidos de la
+  IA (error, demora de mas de `ROADMAP_IA_CORTACIRCUITO_DEMORA_SEGUNDOS`, o una respuesta que no es una ruta valida
+  del catalogo) se deja de llamarla durante `ROADMAP_IA_CORTACIRCUITO_ESPERA_SEGUNDOS`; al cumplirse ese tiempo
+  pasa UNA peticion de prueba, que la cierra si funciona y la vuelve a abrir si falla. Mientras esta abierto el
+  roadmap lo arma el algoritmo de respaldo y la respuesta lo dice en `generadoPor: "RESPALDO"`. Una falla de la IA
+  nunca sale como `5xx`.
 - **Metricas** (`GET /actuator/metrics/<nombre>`, **solo con token de ADMIN**; cuentan por replica y desde que arranco):
 
   | Medida | Que responde |
@@ -354,6 +525,9 @@ lo hace asi.
   | `growlink.roadmap.ia.llamadas` (`resultado` = `respondio`, `fallo`, `no_viable`) y `growlink.roadmap.ia.duracion` | Como le fue a Claude y cuanto tardo |
   | `growlink.roadmap.ia.propuestas` (`resultado` = `aceptada`, `corregida`, `excede_horas`, `invalida`) | Cuanto de lo que propone la IA pasa la validacion del servidor |
   | `growlink.roadmap.limite.rechazos` | Cuantas peticiones freno el tope por persona |
+  | `growlink.roadmap.ia.cortacircuito.estado` | Si la IA se esta usando: `0` cerrado, `1` medio abierto (peticion de prueba), `2` abierto |
+  | `growlink.roadmap.ia.cortacircuito.rechazos` | Cuantas veces no se llamo a la IA por estar el cortacircuito abierto |
+  | `growlink.http.limite-ip.rechazos` | Cuantas peticiones freno el tope por IP |
 
   Ejemplo: `curl -H "Authorization: Bearer <token de admin>" "http://localhost:8086/actuator/metrics/growlink.roadmap.generaciones?tag=fuente:RESPALDO"`.
 

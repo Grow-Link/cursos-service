@@ -4,6 +4,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
@@ -17,7 +18,12 @@ import java.util.Set;
 // emitido por auth-service con el mismo secreto compartido (GROWLINK_JWT_SECRET)
 // y extrae sub (userId) y roles. Mismo patron que usuarios-service, pero con
 // userId Long: ese es el tipo que ya usa publicadorUsuarioId/usuarioId en este servicio.
+//
+// Solo existe en modo legacy (ver SecurityConfig). Con auth.mode=oidc el token lo valida el proveedor de
+// identidad y este servicio ya no necesita el secreto compartido: por eso tampoco se exige GROWLINK_JWT_SECRET
+// para arrancar en ese modo.
 @Component
+@ConditionalOnProperty(name = "auth.mode", havingValue = "legacy", matchIfMissing = true)
 public class TokenService {
 
     private final SecretKey secretKey;

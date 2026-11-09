@@ -15,6 +15,58 @@ spring:
   jackson:
     default-property-inclusion: non_null
 
+# INTERRUPTOR del proveedor de identidad (ver SecurityConfig):
+#   legacy (por defecto): el JWT compartido con auth-service / usuarios-service. Nada de lo actual cambia.
+#   oidc: el token lo emite y firma el proveedor de identidad (Microsoft Entra ID) y aqui solo se valida.
+# Para pasar a oidc no hay que tocar codigo: AUTH_MODE=oidc y las dos variables del emisor y la audiencia.
+auth:
+  mode: ${AUTH_MODE:legacy}
+  # MULTI-INQUILINO. La app esta registrada en Entra para cuentas de cualquier directorio organizacional y
+  # cuentas personales de Microsoft, asi que el `iss` del token trae el inquilino de QUIEN inicia sesion y no uno
+  # fijo. Con false (por defecto) se compara el emisor contra AUTH_ISSUER_URI, como siempre. Con true se acepta
+  # cualquier emisor que encaje ENTERO en el patron de un inquilino de Entra
+  # (https://login.microsoftonline.com/<guid>/v2.0) y se exige que el claim `tid` sea ese mismo GUID; con eso se
+  # caen http://, otros hosts y los parecidos tipo login.microsoftonline.com.evil.com.
+  # Ver ValidadorDeEmisorMultiTenant.
+  multi-tenant: ${AUTH_MULTI_TENANT:false}
+  oidc:
+    # obligatorio solo con multi-tenant: false
+    issuer-uri: ${AUTH_ISSUER_URI:}
+    # una o varias separadas por comas: Entra pone en `aud` el api://<client-id> o el <client-id> pelado segun
+    # como este configurada la aplicacion, asi que lo normal es poner las dos formas
+    audience: ${AUTH_AUDIENCE:}
+    # opcional, solo en multi-inquilino: GUIDs de inquilino separados por comas. Vacia = cualquier inquilino de
+    # Entra (que es lo que quiere una app multi-inquilino de verdad)
+    allowed-tenants: ${AUTH_ALLOWED_TENANTS:}
+    # opcional: donde estan las llaves publicas. En multi-inquilino, por defecto las de /common (no se pueden
+    # descubrir desde el emisor, porque hay uno por inquilino); con un solo inquilino, se descubren a partir del
+    # emisor al arrancar. AUTH_JWK_SET_URI se sigue aceptando como nombre viejo de la misma variable
+    jwk-set-uri: ${AUTH_JWKS_URI:${AUTH_JWK_SET_URI:}}
+    # claims donde puede venir el id numerico de usuario de GrowLink, en orden (el sub de Entra ID es un texto
+    # opaco, no un numero), y de donde salen los roles
+    claims-usuario: ${AUTH_CLAIMS_USUARIO:growlink_uid,uid,sub}
+    claims-roles: ${AUTH_CLAIMS_ROLES:roles,rol,groups}
+  # DE DONDE SALE LA IDENTIDAD DE GROWLINK (usuarioId numerico + rol). El token de Entra no la trae: su `sub` es
+  # un texto opaco, no el numero con el que estan hechas las tablas de este servicio, y el rol es cosa de
+  # GrowLink, no de Microsoft.
+  #   usuarios-service (por defecto): se le pregunta a usuarios-service, que es su dueno
+  #     (GET /api/usuarios/me reenviando el mismo token). Ver ClienteDeUsuariosService.
+  #   claims: se lee del propio token. Se conserva para desarrollo y pruebas sin usuarios-service levantado; en
+  #     produccion no se quiere, porque ahi el rol lo diria el propio token.
+  # Cualquier otro valor no deja arrancar. En modo legacy esto no se usa para nada.
+  identity-source: ${AUTH_IDENTITY_SOURCE:usuarios-service}
+  usuarios-service:
+    # obligatoria con identity-source=usuarios-service (si falta, el servicio no arranca)
+    url: ${USUARIOS_SERVICE_URL:}
+  # cuanto se guarda una identidad ya resuelta, para no consultar a usuarios-service en CADA peticion. Es el
+  # retraso con el que este servicio se entera de un cambio de rol, asi que corto. Una entrada nunca vive mas que
+  # el `exp` de su token
+  identity-cache-seconds: ${AUTH_IDENTITY_CACHE_SECONDS:60}
+  # tope de identidades guardadas a la vez, para que una lluvia de tokens distintos no haga crecer la memoria
+  identity-cache-max: ${AUTH_IDENTITY_CACHE_MAX:10000}
+
+# Solo lo lee TokenService, que solo existe en modo legacy: se sigue exigiendo (si falta, el servicio no arranca
+# en legacy, que es lo que se quiere), pero en modo oidc nadie lo pide y no hace falta configurarlo.
 jwt:
   secret: ${GROWLINK_JWT_SECRET}
 
@@ -42,6 +94,24 @@ roadmap:
   limite:
     generaciones: ${ROADMAP_LIMITE_GENERACIONES:10}
     ventana-minutos: ${ROADMAP_LIMITE_VENTANA_MINUTOS:10}
+  ia:
+    # ATRIBUTO: disponibilidad (tolerancia a fallos). Cortacircuito delante de la IA, ver CortacircuitoDeLaIa:
+    # tras `fallos` fallos seguidos (error, demora de mas de `demora-segundos`, o una respuesta que no sirve) se
+    # deja de llamar a la IA durante `espera-segundos`, y al cumplirse ese tiempo pasa UNA peticion de prueba.
+    # Mientras esta abierto, el roadmap lo arma el algoritmo de respaldo, que no sale a internet.
+    cortacircuito:
+      fallos: ${ROADMAP_IA_CORTACIRCUITO_FALLOS:3}
+      espera-segundos: ${ROADMAP_IA_CORTACIRCUITO_ESPERA_SEGUNDOS:60}
+      demora-segundos: ${ROADMAP_IA_CORTACIRCUITO_DEMORA_SEGUNDOS:10}
+
+# ATRIBUTO: seguridad y disponibilidad. Tope de peticiones por IP (ver LimitePorIpFilter), para todos los
+# endpoints y antes de la seguridad y de la base de datos. La IP real se lee del primer valor de X-Forwarded-For
+# (delante hay un balanceador) y si no llega, de la del socket. Cada replica cuenta por su lado.
+# maximo-por-minuto: 0 lo apaga.
+seguridad:
+  limite-ip:
+    maximo-por-minuto: ${LIMITE_IP_MAXIMO_POR_MINUTO:300}
+    ventana-segundos: ${LIMITE_IP_VENTANA_SEGUNDOS:60}
 
 logging:
   level:
