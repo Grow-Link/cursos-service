@@ -74,6 +74,15 @@ auth:
 jwt:
   secret: ${GROWLINK_JWT_SECRET}
 
+# confidencialidad (S3, ver CifradoFilter): el cuerpo de las peticiones y respuestas va cifrado ademas de HTTPS.
+#   clave-privada: llave RSA de 2048 bits en PKCS#8 (base64). Debe ser la misma en todas las instancias
+#                  (y en los tres servicios, para que el front use una sola). Sin ella se crea una temporal.
+#   obligatorio:   true = lo que llegue sin cifrar se rechaza con 400 (salvo salud, metricas y llamadas internas)
+growlink:
+  cifrado:
+    clave-privada: ${GROWLINK_CIFRADO_CLAVE_PRIVADA:}
+    obligatorio: ${GROWLINK_CIFRADO_OBLIGATORIO:false}
+
 # La integracion real con la API de Claude (ClaudeRoadmapAiClient) solo se
 # activa si la variable de entorno CLAUDE_API_KEY esta configurada; mientras
 # tanto RoadmapService usa el modo de respaldo (ver README).

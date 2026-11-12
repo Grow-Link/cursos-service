@@ -83,7 +83,9 @@ public class SecurityConfig {
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
                                 "/v3/api-docs/**",
-                                "/actuator/health/**"
+                                "/actuator/health/**",
+                                // la llave publica para cifrar (ver CifradoFilter), se pide antes de tener sesion
+                                "/api/seguridad/**"
                         ).permitAll()
                         // las metricas son datos de operacion (cuantas llamadas a la IA, cuanta cache): solo un ADMIN
                         .requestMatchers("/actuator/metrics", "/actuator/metrics/**").hasRole("ADMIN")
