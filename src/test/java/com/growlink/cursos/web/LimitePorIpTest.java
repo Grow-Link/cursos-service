@@ -87,6 +87,33 @@ class LimitePorIpTest {
     }
 
     @Test
+    void elPuertoQueAgregaAzureNoConvierteCadaConexionEnUnaIpNueva() throws Exception {
+        // asi llega detras de Azure App Service: IP:puerto, y el puerto cambia con cada conexion del cliente. Antes
+        // cada puerto contaba como otra IP y el tope no frenaba nunca a nadie
+        String ip = "192.0.2.44";
+        for (int i = 1; i <= MAXIMO; i++) {
+            assertThat(salud(ip + ":" + (40000 + i)).getStatus()).as("peticion numero " + i).isEqualTo(200);
+        }
+
+        // la 301, desde un puerto que no se habia usado, es la misma IP: 429
+        assertThat(salud(ip + ":50000").getStatus()).isEqualTo(429);
+        // y sin puerto tambien es el mismo cliente
+        assertThat(salud(ip).getStatus()).isEqualTo(429);
+    }
+
+    @Test
+    void conIpv6PasaLoMismo() throws Exception {
+        // la IPv6 con puerto va entre corchetes; la que llega sin corchetes no trae puerto
+        String ip = "2001:db8::44";
+        for (int i = 1; i <= MAXIMO; i++) {
+            assertThat(salud("[" + ip + "]:" + (40000 + i)).getStatus()).as("peticion numero " + i).isEqualTo(200);
+        }
+
+        assertThat(salud("[" + ip + "]:50000").getStatus()).isEqualTo(429);
+        assertThat(salud(ip).getStatus()).isEqualTo(429);
+    }
+
+    @Test
     void sinXForwardedForSeUsaLaIpDelSocketYLasPeticionesNormalesPasan() throws Exception {
         // sin la cabecera no hay excusa para dejar pasar todo: se cuenta la IP del socket (aqui la de la prueba)
         assertThat(mockMvc.perform(get("/actuator/health")).andReturn().getResponse().getStatus()).isEqualTo(200);

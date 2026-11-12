@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ATRIBUTO: observabilidad. Los logs salen en JSON, una linea por evento, para que el almacen de logs (Azure Log
+  Analytics, o lo que lea la salida estandar del contenedor) los pueda filtrar por campo sin adivinar con
+  expresiones regulares: por el id de la peticion, el nivel, el logger, el servicio o la replica.
+
+  Cada linea trae:
+    @timestamp    cuando paso, en UTC
+    level         INFO, WARN, ERROR...
+    logger_name   la clase que escribio
+    thread_name   el hilo
+    message       el mensaje
+    rid           el X-Request-Id de la peticion (lo pone SolicitudIdFilter en el MDC); falta si no hay peticion
+    servicio      cursos-service, para mezclar los logs de los tres servicios en un mismo almacen
+    instancia     el nombre de la maquina, el mismo que va en la cabecera X-Instancia de cada respuesta
+    stack_trace   si hubo excepcion: va DENTRO de la linea (con la causa raiz primero), no en lineas sueltas que
+                  el almacen tomaria como eventos aparte
+
+  Para leer los logs a ojo en desarrollo, el perfil logs-texto deja el formato de siempre (con [rid=...], ver
+  logging.pattern.level en application.yml):
+      SPRING_PROFILES_ACTIVE=logs-texto mvn spring-boot:run
+-->
+<configuration>
+
+    <!-- los valores por defecto de Spring Boot (niveles de algunos loggers ruidosos, el patron de texto, etc.) -->
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <springProfile name="logs-texto">
+        <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="!logs-texto">
+        <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                <timeZone>UTC</timeZone>
+                <!-- sin las propiedades internas de logback (su HOSTNAME repetiria lo que ya dice instancia) -->
+                <includeContext>false</includeContext>
+                <customFields>{"servicio":"cursos-service","instancia":"${HOSTNAME}"}</customFields>
+                <fieldNames>
+                    <!-- dos campos que no aportan nada para buscar y ocupan espacio en cada linea -->
+                    <version>[ignore]</version>
+                    <levelValue>[ignore]</levelValue>
+                </fieldNames>
+                <!-- una traza de Spring puede pasar de cien lineas: se recorta para que el evento no se pase del
+                     tamano que acepta un registro del almacen de logs. La causa raiz va primero, para que el
+                     recorte nunca se la lleve (es lo que mas sirve para saber que paso) -->
+                <throwableConverter class="net.logstash.logback.stacktrace.ShortenedThrowableConverter">
+                    <maxDepthPerThrowable>40</maxDepthPerThrowable>
+                    <maxLength>16384</maxLength>
+                    <rootCauseFirst>true</rootCauseFirst>
+                </throwableConverter>
+            </encoder>
+        </appender>
+        <root level="INFO">
+            <appender-ref ref="JSON"/>
+        </root>
+    </springProfile>
+
+</configuration>

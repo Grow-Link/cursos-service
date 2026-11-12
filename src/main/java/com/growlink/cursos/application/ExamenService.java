@@ -27,12 +27,14 @@ public class ExamenService {
     private final PreguntaExamenRepository preguntaRepository;
     private final CursoCompletadoRepository completadoRepository;
     private final CursoRepository cursoRepository;
+    private final MetricasDeCursos metricas;
 
     public ExamenService(PreguntaExamenRepository preguntaRepository, CursoCompletadoRepository completadoRepository,
-                         CursoRepository cursoRepository) {
+                         CursoRepository cursoRepository, MetricasDeCursos metricas) {
         this.preguntaRepository = preguntaRepository;
         this.completadoRepository = completadoRepository;
         this.cursoRepository = cursoRepository;
+        this.metricas = metricas;
     }
 
     public List<PreguntaExamen> preguntasDe(Long cursoId) {
@@ -93,7 +95,16 @@ public class ExamenService {
 
     // califica un examen. respuestas[i] es la opcion elegida (0 a 3) para la pregunta i, -1 si la dejo en blanco.
     // Si aprueba, el curso queda completado (una sola vez, aunque mande el examen dos veces seguidas)
-    @Transactional
+    //
+    // SIN @Transactional a proposito. Si dos envios del mismo examen aprobado llegan a la vez, los dos ven que el curso
+    // todavia no estaba completado y los dos intentan guardarlo: la restriccion unica (usuarioId, cursoId) deja pasar a
+    // uno y al otro le lanza el choque. Si todo esto corriera en UNA transaccion, el choque la dejaria marcada para
+    // deshacerse aunque se atrape, y al confirmarla el que perdio recibiria un 500 (UnexpectedRollbackException). Sin
+    // ella, cada lectura y el guardado van en su propia transaccion corta (la del repositorio): el choque solo deshace ese
+    // guardado, y se atrapa como lo que es, que el otro envio ya lo registro. Tampoco hace falta mas: aqui solo se lee, se
+    // califica y se guarda una fila, y lo unico que tiene que ser atomico (no guardar dos veces) lo cuida la restriccion.
+    // Es una sola conexion a la vez, a diferencia de abrir una transaccion aparte (REQUIRES_NEW), que con muchos envios
+    // simultaneos podria dejar el pool de conexiones sin ninguna libre. Ver ExamenDobleEnvioTest.
     public ResultadoExamen presentar(Long cursoId, Long usuarioId, List<Integer> respuestas) {
         Curso curso = cursoRepository.findById(cursoId).orElseThrow(() -> new CursoNoEncontradoException(cursoId));
         if (!curso.isActivo()) {
@@ -121,8 +132,12 @@ public class ExamenService {
         if (aprobado && !completado) {
             try {
                 completadoRepository.saveAndFlush(new CursoCompletado(usuarioId, cursoId));
+                // solo aqui, con el registro nuevo ya guardado y confirmado: un examen aprobado otra vez, o el envio que
+                // perdio la carrera, no vuelven a contar
+                metricas.cursoCompletado(MetricasDeCursos.VIA_EXAMEN, curso.getCategoria());
             } catch (DataIntegrityViolationException e) {
-                // dos envios al mismo tiempo: el otro ya lo registro, no pasa nada
+                // dos envios al mismo tiempo: el otro ya lo registro. Es la unica restriccion que puede saltar aqui (los
+                // dos valores siempre vienen y la tabla no tiene llaves foraneas), y el resultado es el mismo para los dos
             }
             completado = true;
         }
