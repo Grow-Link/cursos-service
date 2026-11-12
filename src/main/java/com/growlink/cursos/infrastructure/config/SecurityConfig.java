@@ -9,6 +9,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
+import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -45,8 +46,9 @@ public class SecurityConfig {
 
     @Bean
     @ConditionalOnProperty(name = "auth.mode", havingValue = "legacy", matchIfMissing = true)
-    public SecurityFilterChain cadenaLegacy(HttpSecurity http, TokenService tokenService) throws Exception {
-        reglas(http).addFilterBefore(new TokenAuthenticationFilter(tokenService),
+    public SecurityFilterChain cadenaLegacy(HttpSecurity http, TokenService tokenService,
+                                            TokenDeMetricas tokenDeMetricas) throws Exception {
+        reglas(http, tokenDeMetricas).addFilterBefore(new TokenAuthenticationFilter(tokenService),
                 UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
@@ -55,8 +57,9 @@ public class SecurityConfig {
     @ConditionalOnProperty(name = "auth.mode", havingValue = "oidc")
     public SecurityFilterChain cadenaOidc(HttpSecurity http, JwtDecoder jwtDecoder,
                                           Converter<Jwt, AbstractAuthenticationToken> convertidor,
-                                          RegistroDeRechazosOidc registroDeRechazos) throws Exception {
-        reglas(http)
+                                          RegistroDeRechazosOidc registroDeRechazos,
+                                          TokenDeMetricas tokenDeMetricas) throws Exception {
+        reglas(http, tokenDeMetricas)
                 // sin esto, una peticion SIN cabecera Authorization no la atiende el punto de entrada de OAuth2
                 // (su filtro no la reconoce como intento de autenticacion) y acabaria en 403 en vez de 401
                 .exceptionHandling(e -> e.authenticationEntryPoint(registroDeRechazos))
@@ -70,7 +73,7 @@ public class SecurityConfig {
 
     // Lo que se deja entrar sin token y lo que no: identico en los dos modos, escrito una sola vez para que no se
     // puedan ir separando.
-    private static HttpSecurity reglas(HttpSecurity http) throws Exception {
+    private static HttpSecurity reglas(HttpSecurity http, TokenDeMetricas tokenDeMetricas) throws Exception {
         return http.csrf(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)
@@ -84,6 +87,10 @@ public class SecurityConfig {
                         ).permitAll()
                         // las metricas son datos de operacion (cuantas llamadas a la IA, cuanta cache): solo un ADMIN
                         .requestMatchers("/actuator/metrics", "/actuator/metrics/**").hasRole("ADMIN")
+                        // las mismas metricas para Prometheus: solo con el token del scrape, no con el de una persona
+                        // (ni siquiera un ADMIN, que ya tiene /actuator/metrics). Ver TokenDeMetricas
+                        .requestMatchers("/actuator/prometheus").access((autenticacion, contexto) ->
+                                new AuthorizationDecision(tokenDeMetricas.valido(contexto.getRequest())))
                         .anyRequest().authenticated());
     }
 }

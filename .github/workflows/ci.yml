@@ -11,9 +11,16 @@ on:
 jobs:
   build-y-pruebas:
     runs-on: ubuntu-latest
+    env:
+      # un secreto no se puede preguntar en un if: se pasa a una variable de entorno y se pregunta por ella.
+      # En un pull request que viene de un fork GitHub no entrega secretos, asi que ahi queda vacio y Sonar se omite
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
       - name: Bajar el codigo
         uses: actions/checkout@v4
+        with:
+          # SonarCloud necesita la historia completa para saber que lineas son nuevas y a quien atribuirlas
+          fetch-depth: 0
 
       - name: Instalar Java 21
         uses: actions/setup-java@v4
@@ -22,9 +29,18 @@ jobs:
           java-version: 21
           cache: maven
 
-      # las pruebas usan H2 con el perfil test, no necesitan Postgres
-      - name: Compilar y correr pruebas
+      # las pruebas usan H2 con el perfil test, no necesitan Postgres.
+      # verify tambien deja la cobertura de JaCoCo en target/site/jacoco (index.html y jacoco.xml)
+      - name: Compilar, correr pruebas y medir cobertura
         run: mvn -B verify
+
+      # para ver la cobertura sin depender de SonarCloud: se baja desde el resumen de la corrida
+      - name: Guardar el reporte de cobertura
+        uses: actions/upload-artifact@v4
+        with:
+          name: cobertura-${{ github.event.repository.name }}
+          path: target/site/jacoco/
+          if-no-files-found: error
 
       - name: Guardar el jar
         uses: actions/upload-artifact@v4
@@ -32,3 +48,28 @@ jobs:
           name: jar-${{ github.event.repository.name }}
           path: target/*.jar
           if-no-files-found: error
+
+      # Mientras el repo no tenga el secreto SONAR_TOKEN, el analisis se OMITE (con un aviso) y el workflow queda
+      # en verde, igual que el despliegue de cd.yml sin AZURE_WEBAPP_NAME
+      - name: Aviso, SonarCloud no esta configurado
+        if: ${{ env.SONAR_TOKEN == '' }}
+        run: echo "::notice::Analisis de SonarCloud omitido, falta el secreto SONAR_TOKEN en el repo (ver README)."
+
+      - name: Cache de SonarCloud
+        if: ${{ env.SONAR_TOKEN != '' }}
+        uses: actions/cache@v4
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+
+      # Lee lo que ya dejo verify (las clases compiladas y el jacoco.xml): no vuelve a correr las pruebas.
+      # La organizacion y la clave del proyecto son las que pone SonarCloud al importar el repo desde GitHub; si
+      # quedaron distintas, se cambian con las variables SONAR_ORGANIZATION y SONAR_PROJECT_KEY del repo
+      - name: Analisis de SonarCloud
+        if: ${{ env.SONAR_TOKEN != '' }}
+        run: >-
+          mvn -B org.sonarsource.scanner.maven:sonar-maven-plugin:5.8.0.7211:sonar
+          -Dsonar.host.url=https://sonarcloud.io
+          -Dsonar.organization=${{ vars.SONAR_ORGANIZATION || 'grow-link' }}
+          -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY || 'Grow-Link_cursos-service' }}

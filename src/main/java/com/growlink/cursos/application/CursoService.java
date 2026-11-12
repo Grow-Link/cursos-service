@@ -24,17 +24,19 @@ public class CursoService {
     private final PreguntaExamenRepository preguntaExamenRepository;
     private final HabilidadService habilidadService;
     private final ExamenService examenService;
+    private final MetricasDeCursos metricas;
 
     public CursoService(CursoRepository cursoRepository, CursoPrerequisitoRepository prerequisitoRepository,
                          CursoCompletadoRepository completadoRepository,
                          PreguntaExamenRepository preguntaExamenRepository, HabilidadService habilidadService,
-                         ExamenService examenService) {
+                         ExamenService examenService, MetricasDeCursos metricas) {
         this.cursoRepository = cursoRepository;
         this.prerequisitoRepository = prerequisitoRepository;
         this.completadoRepository = completadoRepository;
         this.preguntaExamenRepository = preguntaExamenRepository;
         this.habilidadService = habilidadService;
         this.examenService = examenService;
+        this.metricas = metricas;
     }
 
     // examen puede ir vacio (null): el curso queda publicado pero nadie puede completarlo hasta que tenga uno.
@@ -166,13 +168,23 @@ public class CursoService {
 
     // HU-14: marcar un curso como completado a la fuerza. Solo lo usa un ADMIN (por ejemplo para sembrar datos de
     // demostracion): una persona completa un curso aprobando su examen (ver ExamenService.presentar)
+    // No cuenta en la metrica de cursos completados: lo usa tambien la siembra del arranque (ver MetricasDeCursos)
     @Transactional
-    public void completar(Long cursoId, Long usuarioId) {
-        obtener(cursoId); // valida que el curso exista (activo o no)
+    public Curso completar(Long cursoId, Long usuarioId) {
+        Curso curso = obtener(cursoId); // valida que el curso exista (activo o no)
         if (completadoRepository.existsByUsuarioIdAndCursoId(usuarioId, cursoId)) {
             throw new CursoYaCompletadoException(usuarioId, cursoId);
         }
         completadoRepository.save(new CursoCompletado(usuarioId, cursoId));
+        return curso;
+    }
+
+    // Lo que hace POST /api/cursos/{id}/completar: lo mismo que completar, y ademas cuenta en la metrica de cursos
+    // completados (via=admin). Si ya estaba completado, completar lanza la excepcion y no se cuenta nada
+    @Transactional
+    public void completarComoAdmin(Long cursoId, Long usuarioId) {
+        Curso curso = completar(cursoId, usuarioId);
+        metricas.cursoCompletado(MetricasDeCursos.VIA_ADMIN, curso.getCategoria());
     }
 
     // HU-15: historial de completados, incluye cursos ya inactivos

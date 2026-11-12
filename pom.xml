@@ -22,6 +22,11 @@
     <springdoc.version>2.6.0</springdoc.version>
     <!-- 2.2.0 es la linea de Resilience4j para Spring Boot 3.x / Java 17+ (aqui Boot 3.3.4 y Java 21) -->
     <resilience4j.version>2.2.0</resilience4j.version>
+    <!-- 8.0 es la que va con el logback 1.5 y el Jackson 2.17 de este Spring Boot -->
+    <logstash-logback-encoder.version>8.0</logstash-logback-encoder.version>
+    <jacoco.version>0.8.14</jacoco.version>
+    <!-- SonarCloud lee la cobertura del reporte XML de JaCoCo (lo deja mvn verify, ver el plugin abajo) -->
+    <sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
   </properties>
 
   <dependencies>
@@ -64,6 +69,20 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+
+    <!-- las metricas en el formato de Prometheus, en /actuator/prometheus (con token, ver TokenDeMetricas) -->
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-registry-prometheus</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+
+    <!-- logs en JSON, una linea por evento (ver logback-spring.xml) -->
+    <dependency>
+      <groupId>net.logstash.logback</groupId>
+      <artifactId>logstash-logback-encoder</artifactId>
+      <version>${logstash-logback-encoder.version}</version>
     </dependency>
 
     <dependency>
@@ -113,6 +132,31 @@
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+
+      <!-- Cobertura de las pruebas: prepare-agent engancha el agente de JaCoCo a las pruebas (por la propiedad
+           argLine que lee surefire) y report deja target/site/jacoco/ (index.html para leer, jacoco.xml para
+           SonarCloud) al final de mvn verify. No hace fallar el build por un porcentaje: eso lo decide la
+           puerta de calidad de SonarCloud. -->
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <version>${jacoco.version}</version>
+        <executions>
+          <execution>
+            <id>preparar-agente</id>
+            <goals>
+              <goal>prepare-agent</goal>
+            </goals>
+          </execution>
+          <execution>
+            <id>reporte</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>report</goal>
+            </goals>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>

@@ -169,7 +169,7 @@ public class CursoController {
         if (!AuthenticatedUser.isAdmin()) {
             throw new NoAutorizadoException("Un curso se completa aprobando su examen.");
         }
-        cursoService.completar(id, request.usuarioId());
+        cursoService.completarComoAdmin(id, request.usuarioId());
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 

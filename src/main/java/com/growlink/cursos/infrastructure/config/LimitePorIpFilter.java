@@ -96,17 +96,42 @@ public class LimitePorIpFilter extends OncePerRequestFilter {
                 + esperaSegundos + " s y vuelve a intentarlo.\"}");
     }
 
-    /** La IP del cliente: el primer valor de X-Forwarded-For si llega, y si no la del socket. */
+    /** La IP del cliente: el primer valor de X-Forwarded-For si llega (sin puerto), y si no la del socket. */
     static String ipDe(HttpServletRequest request) {
         String reenviada = request.getHeader(CABECERA_IP);
         if (reenviada != null) {
-            String primera = reenviada.split(",")[0].trim();
+            String primera = sinPuerto(reenviada.split(",")[0].trim());
             if (!primera.isEmpty()) {
                 return primera;
             }
         }
         String socket = request.getRemoteAddr();
         return socket == null || socket.isBlank() ? "desconocida" : socket;
+    }
+
+    // Azure App Service manda el cliente en X-Forwarded-For como IP:puerto (p.ej. 203.0.113.7:51234), y ese puerto
+    // es el de la conexion del cliente: cambia con cada conexion nueva. Si se contara con el puerto, cada conexion
+    // seria una "IP" distinta que empieza de cero y el tope no frenaria nunca a nadie. Las formas que pueden llegar:
+    //
+    //   203.0.113.7             IPv4 sola                        -> tal cual
+    //   203.0.113.7:51234       IPv4 con puerto                  -> 203.0.113.7
+    //   [2001:db8::1]:51234     IPv6 con puerto (va entre [])    -> 2001:db8::1
+    //   [2001:db8::1]           IPv6 entre corchetes, sin puerto -> 2001:db8::1
+    //   2001:db8::1             IPv6 sola                        -> tal cual: tiene varios ':' y son de la direccion
+    //
+    // Un solo ':' solo puede ser el del puerto, porque una IPv6 sin corchetes siempre trae mas de uno. Un valor que
+    // queda vacio (p.ej. ":51234") se descarta y se usa la IP del socket, como cuando no llega la cabecera.
+    // Es el mismo arreglo que en usuarios-service (ver ADR-0011 en el repo infra).
+    static String sinPuerto(String valor) {
+        if (valor.startsWith("[")) {
+            int cierre = valor.indexOf(']');
+            return cierre > 1 ? valor.substring(1, cierre) : valor;
+        }
+        int dosPuntos = valor.indexOf(':');
+        if (dosPuntos >= 0 && dosPuntos == valor.lastIndexOf(':')) {
+            return valor.substring(0, dosPuntos);
+        }
+        return valor;
     }
 
     /** Anota la peticion de esa IP: -1 si cabe en la ventana, o los segundos que faltan si ya se paso del tope. */

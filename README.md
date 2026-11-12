@@ -12,6 +12,9 @@ docker compose up -d   # Postgres en localhost:5437
 mvn spring-boot:run    # arranca en localhost:8086
 ```
 
+Los logs salen en JSON, una linea por evento (ver [Logs en JSON](#logs-en-json)). Para leerlos a ojo en desarrollo:
+`SPRING_PROFILES_ACTIVE=logs-texto mvn spring-boot:run`.
+
 Variables de entorno requeridas:
 
 | Variable | Para que |
@@ -253,6 +256,7 @@ descripción indicando que requieren ser el publicador dueño o tener rol
 
 - Un curso lleva descripcion, **horas**, **temario**, enlace, habilidades, prerequisitos y un **examen** de 3 a 15 preguntas de 4 opciones (el publicador lo escribe al publicar). Sin examen no se puede completar.
 - **Completar un curso exige aprobar su examen** (minimo 70 %), calificado en el servidor: el cliente nunca recibe cual era la respuesta correcta.
+- **Mandar el mismo examen aprobado dos veces a la vez** (doble clic, dos pestanas, un reintento) lo deja completado una sola vez y los dos envios reciben su resultado. Antes, el que perdia la carrera respondia 500: chocaba con la restriccion unica dentro de una transaccion que ya no se podia confirmar. Ahora `ExamenService.presentar` no abre una transaccion propia y el guardado va solo (ver el comentario ahi y `ExamenDobleEnvioTest`, con la carrera armada a proposito y con 8 hilos de verdad).
 - Al arrancar se siembra un catalogo de demostracion (`src/main/resources/catalogo-demo.json`, 32 cursos reales en 5 areas) y un usuario de demostracion (id 5, Esteban) con roadmap y 3 cursos aprobados. Es seguro correrlo en cada arranque: no pisa lo que un publicador haya editado.
 - **Control de metas** (`MetaValidator`): una meta sin sentido responde 400 y una meta sin cursos relacionados en las areas elegidas responde 422, con un mensaje que la persona puede leer. Nunca se devuelve una ruta inventada o por defecto.
 - Las **alternativas** de un paso son cursos de la misma area que trabajan las mismas habilidades a un nivel igual o mas basico; si no hay ninguno equivalente, la lista va vacia.
@@ -421,8 +425,25 @@ incluye `modoRespaldo` para que el frontend pueda indicarlo si quiere.
 ## Pruebas
 
 ```bash
-mvn test
+mvn test     # solo las pruebas
+mvn verify   # las pruebas y la cobertura: target/site/jacoco/index.html
 ```
+
+### Cobertura y SonarCloud en el CI
+
+`ci.yml` corre `mvn -B verify`, que con JaCoCo deja la cobertura en `target/site/jacoco/` (se puede bajar como
+artefacto `cobertura-cursos-service` desde el resumen de la corrida). Despues manda el analisis a SonarCloud, que lee
+ese mismo reporte (`jacoco.xml`) sin volver a correr las pruebas. El build no se cae por un porcentaje de cobertura:
+eso lo decide la puerta de calidad de SonarCloud.
+
+Mientras el repo no tenga el secreto `SONAR_TOKEN`, el paso de SonarCloud se **omite** con un aviso y el workflow queda
+en verde. Para prenderlo:
+
+1. En SonarCloud, importar el repo desde la organizacion de GitHub y, en *Administration > Analysis Method*, apagar
+   *Automatic Analysis* (si queda prendido, el analisis desde el CI falla).
+2. Crear un token en SonarCloud (*My Account > Security*) y guardarlo en GitHub como secreto del repo `SONAR_TOKEN`.
+3. El CI usa la organizacion `grow-link` y la clave `Grow-Link_cursos-service`, que son las que pone SonarCloud al
+   importar. Si quedaron distintas, poner las variables del repo `SONAR_ORGANIZATION` y `SONAR_PROJECT_KEY`.
 
 `CursoControllerTest` cubre la creacion de cursos y la validacion de ciclos
 (ya existia). `CursoFeaturesTest` cubre lo nuevo: catalogo de habilidades y
@@ -459,8 +480,9 @@ ve los roadmaps completados de otro.
 ## Despliegue
 
 Se despliega en Azure App Service, el flujo de ramas y ambientes esta
-explicado en el README del repo `infra`. `ci.yml` corre las pruebas en cada
-push a `main`, `avance` o `final`, y `cd.yml` despliega la rama a su ambiente
+explicado en el README del repo `infra`. `ci.yml` corre las pruebas, mide la
+cobertura y (si esta configurado) manda el analisis a SonarCloud en cada push a
+`main`, `avance` o `final` y en cada pull request a `main`; `cd.yml` despliega la rama a su ambiente
 de GitHub (`main` -> `actual`, `avance` -> `avance`, `final` -> `final`).
 Tambien hay un `Dockerfile`.
 
@@ -496,26 +518,42 @@ lo hace asi.
 | `AUTH_IDENTITY_CACHE_SECONDS` | Opcional, cuanto se guarda una identidad ya resuelta (por defecto `60`). Es el retraso maximo con el que se nota un cambio de rol; nunca pasa del `exp` del token |
 | `AUTH_IDENTITY_CACHE_MAX` | Opcional, tope de identidades guardadas a la vez (por defecto `10000`) |
 | `AUTH_JWKS_URI` | Opcional con `AUTH_MODE=oidc`: donde estan las llaves publicas. En multi-inquilino, por defecto las de `/common`; con un solo inquilino, se descubren desde el emisor. (`AUTH_JWK_SET_URI` se sigue aceptando como nombre viejo) |
+| `SPRING_PROFILES_ACTIVE` | Opcional. En Azure no se pone (los logs salen en JSON); `logs-texto` es solo para leerlos a ojo en desarrollo |
+| `METRICAS_TOKEN` | El token con el que Prometheus lee `/actuator/prometheus` (el mismo en los tres servicios, minimo 16 caracteres). Sin el, esas metricas quedan cerradas |
 
 ### Salud, trazabilidad y limite de uso
 
 - **Salud**: `GET /actuator/health` (y `/actuator/health/liveness` y `/readiness`) responde sin credenciales y sin
-  detalles. `readiness` incluye la base de datos: es la que conviene usar como "health check" en Azure o en el
-  balanceador. No se exponen otros endpoints de actuator.
+  detalles. `readiness` incluye la base de datos (una replica sin base responde 503; `liveness` no la mira, a proposito,
+  porque reiniciarla no arregla la base; ver `ReadinessConLaBaseDeDatosTest`): es la que conviene usar como "health check" en Azure o en el
+  balanceador. Aparte de la salud, solo se exponen las metricas: `/actuator/metrics` para un ADMIN y
+  `/actuator/prometheus` con el token del scrape (ver abajo).
 - **Trazabilidad**: cada peticion lleva `X-Request-Id` (se respeta uno valido que mande el balanceador, si no se crea),
-  vuelve en la respuesta y sale en cada linea del log como `[rid=...]`.
+  vuelve en la respuesta y sale en cada linea del log, en el campo `rid` (o como `[rid=...]` con el perfil
+  `logs-texto`). La llamada a usuarios-service para resolver la identidad (modo `oidc`) lo reenvia, asi una peticion
+  se sigue por los dos servicios (`IdentidadDesdeUsuariosServiceTest`).
 - **Limite de roadmaps**: pedir mas de `ROADMAP_LIMITE_GENERACIONES` en `ROADMAP_LIMITE_VENTANA_MINUTOS` responde
   `429` con `Retry-After` (segundos) y un mensaje que dice cuanto esperar. Cada replica cuenta por su lado.
 - **Limite por IP** (`LimitePorIpFilter`): mas de `LIMITE_IP_MAXIMO_POR_MINUTO` peticiones de la misma IP dentro de
   la ventana responden `429` con `Retry-After`, en cualquier endpoint y antes de la seguridad y de la base de datos.
   La IP se toma del primer valor de `X-Forwarded-For` (delante hay un balanceador) y si no llega, de la del socket.
   Cada replica cuenta por su lado, asi que con N replicas el tope real es de hasta N veces el configurado.
+  A esa IP se le quita el puerto: Azure App Service la manda como `IP:puerto` (`203.0.113.7:51234`) y el puerto
+  cambia con cada conexion, asi que contada con puerto cada conexion era una IP nueva y el tope no frenaba a nadie.
+  Tambien se quita de una IPv6 entre corchetes (`[2001:db8::1]:51234`); una IPv6 sin corchetes se deja tal cual.
+  Ojo: ese primer valor lo puede escribir el cliente (el nginx del frontend agrega al final, no reemplaza), asi que
+  quien mande su propia cabecera puede esquivar el tope; esta anotado como pendiente en el ADR-0011 del repo `infra`.
 - **Cortacircuito de la IA** (`CortacircuitoDeLaIa`): tras `ROADMAP_IA_CORTACIRCUITO_FALLOS` fallos seguidos de la
   IA (error, demora de mas de `ROADMAP_IA_CORTACIRCUITO_DEMORA_SEGUNDOS`, o una respuesta que no es una ruta valida
   del catalogo) se deja de llamarla durante `ROADMAP_IA_CORTACIRCUITO_ESPERA_SEGUNDOS`; al cumplirse ese tiempo
   pasa UNA peticion de prueba, que la cierra si funciona y la vuelve a abrir si falla. Mientras esta abierto el
   roadmap lo arma el algoritmo de respaldo y la respuesta lo dice en `generadoPor: "RESPALDO"`. Una falla de la IA
   nunca sale como `5xx`.
+- **Metricas para Prometheus** (`GET /actuator/prometheus`): las mismas de abajo y las de la JVM y las peticiones HTTP
+  (con cubetas de latencia fijas de 10 ms a 10 s), todas con la etiqueta `instancia` (`WEBSITE_INSTANCE_ID` en Azure,
+  si no el nombre del host), para los tableros de Grafana del repo `infra` (ADR-0009). Solo contesta con la cabecera
+  `X-Metricas-Token: <METRICAS_TOKEN>` (ni un ADMIN entra con su token); sin ella, 403 en modo legacy y 401 en oidc.
+  Sin `METRICAS_TOKEN` queda cerrado para todos. Ver `TokenDeMetricas`.
 - **Metricas** (`GET /actuator/metrics/<nombre>`, **solo con token de ADMIN**; cuentan por replica y desde que arranco):
 
   | Medida | Que responde |
@@ -528,8 +566,42 @@ lo hace asi.
   | `growlink.roadmap.ia.cortacircuito.estado` | Si la IA se esta usando: `0` cerrado, `1` medio abierto (peticion de prueba), `2` abierto |
   | `growlink.roadmap.ia.cortacircuito.rechazos` | Cuantas veces no se llamo a la IA por estar el cortacircuito abierto |
   | `growlink.http.limite-ip.rechazos` | Cuantas peticiones freno el tope por IP |
+  | `growlink.cursos.completados` (`via` = `examen` o `admin`, `categoria` = el area del curso) | Cuantos cursos se completaron. Ver abajo que cuenta y que no |
 
   Ejemplo: `curl -H "Authorization: Bearer <token de admin>" "http://localhost:8086/actuator/metrics/growlink.roadmap.generaciones?tag=fuente:RESPALDO"`.
+
+### Cursos completados
+
+`growlink.cursos.completados` es para el tablero de negocio (ver `MetricasDeCursos`). Para que el numero diga lo que
+parece que dice:
+
+- **`via=examen`** es una persona que aprobo el examen (la forma normal); **`via=admin`** es un ADMIN que lo marco
+  con `POST /api/cursos/{id}/completar`. `categoria` es el area del curso.
+- Solo cuenta un registro **nuevo**: presentar otra vez un examen ya aprobado, reprobarlo, o completar dos veces el
+  mismo curso no suma.
+- Solo cuenta lo que **quedo guardado**: se suma cuando la transaccion se confirma, no antes.
+- Lo que siembra el arranque (los 3 cursos aprobados del usuario de demostracion) **no cuenta**: no es alguien
+  completando un curso.
+- Todas las combinaciones existen desde el arranque en `0`, para que el tablero no muestre "sin datos".
+
+Ejemplo: `curl -H "Authorization: Bearer <token de admin>" "http://localhost:8086/actuator/metrics/growlink.cursos.completados?tag=via:examen"`.
+
+## Logs en JSON
+
+Cada linea de la salida es un objeto JSON (ver `logback-spring.xml`), para que el almacen de logs (Azure Log Analytics)
+los filtre por campo:
+
+| Campo | Que trae |
+|---|---|
+| `@timestamp` | Cuando paso, en UTC |
+| `level`, `logger_name`, `thread_name`, `message` | Lo de siempre |
+| `rid` | El `X-Request-Id` de la peticion. Falta en lo que no viene de una peticion (el arranque, por ejemplo) |
+| `servicio` | `cursos-service` |
+| `instancia` | La replica: el mismo valor que la cabecera `X-Instancia` |
+| `stack_trace` | Si hubo excepcion, dentro de la misma linea, con la causa raiz primero y recortada a 16 384 caracteres |
+
+Con el perfil `logs-texto` (`SPRING_PROFILES_ACTIVE=logs-texto`) sale el formato de texto de antes, con `[rid=...]`.
+El letrero de Spring esta apagado, porque no es JSON.
 
 ## Pendiente
 

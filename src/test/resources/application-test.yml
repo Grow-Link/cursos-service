@@ -10,3 +10,6 @@ spring:
 
 jwt:
   secret: test-secret-test-secret-test-secret-test-secret
+
+observabilidad:
+  metricas-token: token-de-metricas-solo-para-pruebas
