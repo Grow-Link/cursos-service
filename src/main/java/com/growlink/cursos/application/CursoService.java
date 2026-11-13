@@ -67,21 +67,42 @@ public class CursoService {
         return curso;
     }
 
+    // Devuelve el curso con habilidades y temario YA cargados (son LAZY): el DTO se arma despues, fuera de la
+    // transaccion, porque open-in-view esta en false. Transaccional tambien para que las dos consultas del par
+    // compartan la sesion
+    @Transactional(readOnly = true)
     public Curso obtener(Long cursoId) {
-        return cursoRepository.findById(cursoId).orElseThrow(() -> new CursoNoEncontradoException(cursoId));
+        Curso curso = cursoRepository.buscarPorIdsConHabilidades(List.of(cursoId)).stream().findFirst()
+                .orElseThrow(() -> new CursoNoEncontradoException(cursoId));
+        cursoRepository.cargarTemario(List.of(cursoId));
+        return curso;
     }
 
+    // HU-07: "Mis cursos" del publicador (incluye inactivos)
+    @Transactional(readOnly = true)
     public List<Curso> listarPorPublicador(Long publicadorUsuarioId) {
-        return cursoRepository.findByPublicadorUsuarioId(publicadorUsuarioId);
+        return conTemario(cursoRepository.findByPublicadorUsuarioId(publicadorUsuarioId));
     }
 
     // HU-13: catalogo general, siempre solo cursos activos
+    @Transactional(readOnly = true)
     public List<Curso> catalogo(Categoria categoria, Nivel nivel) {
-        return cursoRepository.buscarCatalogo(categoria, nivel);
+        return conTemario(cursoRepository.buscarCatalogo(categoria, nivel));
+    }
+
+    // Segunda consulta del par (ver CursoRepository): deja el temario de todos estos cursos inicializado con UNA
+    // consulta, en vez de una por curso al armar el DTO. Tiene que correr dentro de la misma transaccion que la
+    // consulta que trajo los cursos, por eso solo se llama desde metodos transaccionales
+    private List<Curso> conTemario(List<Curso> cursos) {
+        if (!cursos.isEmpty()) {
+            cursoRepository.cargarTemario(cursos.stream().map(Curso::getId).toList());
+        }
+        return cursos;
     }
 
     // las areas que de verdad tienen cursos activos ahora mismo, con cuantos hay, de que niveles, cuantas horas
     // suman y ejemplos. Es lo que se le muestra a la persona antes de pedirle su meta; nada va escrito a mano
+    @Transactional(readOnly = true)
     public List<AreaResumenResponse> resumenAreas() {
         Map<Categoria, List<Curso>> porArea = cursoRepository.buscarCatalogo(null, null).stream()
                 .collect(Collectors.groupingBy(Curso::getCategoria, () -> new EnumMap<>(Categoria.class), Collectors.toList()));
@@ -118,6 +139,20 @@ public class CursoService {
         return prerequisitoRepository.findByCursoId(cursoId).stream()
                 .map(CursoPrerequisito::getPrerequisitoId)
                 .toList();
+    }
+
+    // los prerequisitos de VARIOS cursos en una sola consulta. Lo usa el listado del catalogo: con prerequisitosDe
+    // por curso, un catalogo de N cursos hacia N consultas (N+1)
+    @Transactional(readOnly = true)
+    public Map<Long, List<Long>> prerequisitosPorCurso(Collection<Long> cursoIds) {
+        if (cursoIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, List<Long>> porCurso = new HashMap<>();
+        for (CursoPrerequisito cp : prerequisitoRepository.findByCursoIdIn(cursoIds)) {
+            porCurso.computeIfAbsent(cp.getCursoId(), k -> new ArrayList<>()).add(cp.getPrerequisitoId());
+        }
+        return porCurso;
     }
 
     // cuantas preguntas tiene el examen de cada curso (0 = todavia no tiene examen), en una sola consulta
@@ -187,11 +222,28 @@ public class CursoService {
         metricas.cursoCompletado(MetricasDeCursos.VIA_ADMIN, curso.getCategoria());
     }
 
-    // HU-15: historial de completados, incluye cursos ya inactivos
+    // HU-15: historial de completados, incluye cursos ya inactivos. Los cursos van en UNA consulta (con sus
+    // habilidades, que es lo que el DTO necesita), no una por completado
+    @Transactional(readOnly = true)
     public List<CompletadoDetalle> completados(Long usuarioId) {
-        return completadoRepository.findByUsuarioId(usuarioId).stream()
-                .map(cc -> new CompletadoDetalle(obtener(cc.getCursoId()), cc.getFecha()))
+        List<CursoCompletado> completados = completadoRepository.findByUsuarioId(usuarioId);
+        if (completados.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, Curso> cursosPorId = cursoRepository
+                .buscarPorIdsConHabilidades(completados.stream().map(CursoCompletado::getCursoId).toList()).stream()
+                .collect(Collectors.toMap(Curso::getId, c -> c));
+        return completados.stream()
+                .map(cc -> new CompletadoDetalle(exigir(cursosPorId.get(cc.getCursoId()), cc.getCursoId()),
+                        cc.getFecha()))
                 .toList();
+    }
+
+    private Curso exigir(Curso curso, Long cursoId) {
+        if (curso == null) {
+            throw new CursoNoEncontradoException(cursoId);
+        }
+        return curso;
     }
 
     private void validarDetalle(Integer duracionHoras, List<String> temario) {

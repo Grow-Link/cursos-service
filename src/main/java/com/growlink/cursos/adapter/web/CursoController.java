@@ -80,8 +80,15 @@ public class CursoController {
         List<Curso> cursos = publicadorUsuarioId != null
                 ? cursoService.listarPorPublicador(publicadorUsuarioId)
                 : cursoService.catalogo(categoria, nivel);
-        Map<Long, Long> examenes = cursoService.totalPreguntasPorCurso(cursos.stream().map(Curso::getId).toList());
-        return cursos.stream().map(c -> aRespuesta(c, examenes.getOrDefault(c.getId(), 0L))).toList();
+        // todo lo que el listado necesita ademas del curso va en consultas de bloque: una para los examenes y
+        // una para los prerequisitos. Una consulta por curso aqui es un N+1 que crece con el catalogo
+        List<Long> ids = cursos.stream().map(Curso::getId).toList();
+        Map<Long, Long> examenes = cursoService.totalPreguntasPorCurso(ids);
+        Map<Long, List<Long>> prerequisitos = cursoService.prerequisitosPorCurso(ids);
+        return cursos.stream()
+                .map(c -> CursoResponse.from(c, prerequisitos.getOrDefault(c.getId(), List.of()),
+                        examenes.getOrDefault(c.getId(), 0L)))
+                .toList();
     }
 
     @Operation(summary = "Areas con cursos",

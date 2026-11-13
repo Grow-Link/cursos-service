@@ -204,6 +204,9 @@ public class RoadmapService {
         return construirDetalle(roadmap, entradas);
     }
 
+    // Transaccional de lectura: construirDetalle carga las colecciones LAZY de Curso con consultas de bloque y
+    // todas tienen que compartir la sesion (open-in-view esta en false, ver CursoRepository)
+    @Transactional(readOnly = true)
     public RoadmapDetalle mio(Long usuarioId) {
         Roadmap roadmap = roadmapRepository.findFirstByUsuarioIdOrderByCreadoEnDesc(usuarioId)
                 .orElseThrow(() -> new RoadmapNoEncontradoException(usuarioId));
@@ -323,20 +326,34 @@ public class RoadmapService {
 
     // arma lo que la pantalla necesita de cada curso de la ruta: sus datos completos, la razon de que este
     // ahi, los prerequisitos reales, y otros cursos que cubren lo mismo por si el principal no le sirve
+    // Todo en consultas de bloque, ninguna por curso: los cursos de la ruta con sus habilidades (1) y su
+    // temario (1), el catalogo activo con sus habilidades (1, para las alternativas, que no muestran temario),
+    // los prerequisitos de la ruta (1) y las preguntas de examen de la ruta MAS el catalogo (1). Lo ultimo se
+    // mira sobre el catalogo entero porque una alternativa solo se propone si tiene examen: con una consulta por
+    // candidato, esta respuesta crecia con el tamano del catalogo.
     private RoadmapDetalle construirDetalle(Roadmap roadmap, List<RoadmapCurso> entradas) {
         List<Long> cursoIds = entradas.stream().map(RoadmapCurso::getCursoId).toList();
-        Map<Long, Curso> cursosPorId = cursoRepository.findAllById(cursoIds).stream()
+        Map<Long, Curso> cursosPorId = cursoRepository.buscarPorIdsConHabilidades(cursoIds).stream()
                 .collect(Collectors.toMap(Curso::getId, c -> c));
+        if (!cursoIds.isEmpty()) {
+            cursoRepository.cargarTemario(cursoIds);
+        }
         Set<Long> enRuta = new HashSet<>(cursoIds);
         List<Curso> catalogoActivo = cursoRepository.buscarCatalogo(null, null);
+
+        Map<Long, List<Long>> prerequisitosPorCurso = prerequisitosPorCurso(cursoIds);
+        Set<Long> paraContarExamen = new HashSet<>(cursoIds);
+        catalogoActivo.forEach(c -> paraContarExamen.add(c.getId()));
+        Map<Long, Long> preguntasPorCurso = preguntasPorCurso(paraContarExamen);
 
         List<RoadmapCursoDetalle> detalle = entradas.stream()
                 .map(e -> {
                     Curso curso = cursosPorId.get(e.getCursoId());
-                    return new RoadmapCursoDetalle(curso, e.getOrden(), prerequisitosDe(e.getCursoId()),
+                    return new RoadmapCursoDetalle(curso, e.getOrden(),
+                            prerequisitosPorCurso.getOrDefault(e.getCursoId(), List.of()),
                             e.getRazon() == null ? "" : e.getRazon(),
-                            alternativasDe(curso, enRuta, catalogoActivo),
-                            preguntaExamenRepository.countByCursoId(curso.getId()));
+                            alternativasDe(curso, enRuta, catalogoActivo, preguntasPorCurso),
+                            preguntasPorCurso.getOrDefault(curso.getId(), 0L));
                 })
                 .toList();
         return new RoadmapDetalle(roadmap, detalle);
@@ -346,7 +363,8 @@ public class RoadmapService {
     // sus mismas habilidades), que no estan ya en la ruta y que tienen examen. Si la persona aprueba cualquiera de
     // ellos, el paso queda cumplido. Los mas parecidos primero (los que cubren menos de mas). Si no hay ninguno
     // equivalente la lista queda vacia: mejor nada que algo que no sirve para cumplir el paso.
-    private List<AlternativaDetalle> alternativasDe(Curso curso, Set<Long> enRuta, List<Curso> catalogoActivo) {
+    private List<AlternativaDetalle> alternativasDe(Curso curso, Set<Long> enRuta, List<Curso> catalogoActivo,
+                                                     Map<Long, Long> preguntasPorCurso) {
         Set<Long> habilidades = curso.getHabilidades().stream().map(Habilidad::getId).collect(Collectors.toSet());
         if (habilidades.isEmpty()) {
             return List.of();
@@ -355,7 +373,7 @@ public class RoadmapService {
                 .filter(c -> !c.getId().equals(curso.getId()) && !enRuta.contains(c.getId()))
                 .filter(c -> c.getCategoria() == curso.getCategoria() && c.getNivel() == curso.getNivel())
                 .filter(c -> c.getHabilidades().stream().map(Habilidad::getId).collect(Collectors.toSet()).containsAll(habilidades))
-                .map(c -> new AlternativaDetalle(c, preguntaExamenRepository.countByCursoId(c.getId())))
+                .map(c -> new AlternativaDetalle(c, preguntasPorCurso.getOrDefault(c.getId(), 0L)))
                 .filter(a -> a.totalPreguntasExamen() > 0)
                 .sorted(Comparator.comparingInt((AlternativaDetalle a) -> a.curso().getHabilidades().size())
                         .thenComparing(a -> a.curso().getId()))
@@ -587,6 +605,7 @@ public class RoadmapService {
     // prerequisitos al publicar un curso (formulario de "publicar curso"):
     // candidatos = cursos activos existentes de esa misma categoria y de un nivel MENOR al del curso nuevo
     // (un prerequisito de su mismo nivel o de uno mas alto no tiene sentido y abre la puerta a ciclos).
+    @Transactional(readOnly = true)
     public SugerenciaPrerequisitosResultado sugerirPrerequisitos(Categoria categoria, Nivel nivel, String titulo,
                                                                    String descripcion) {
         List<Curso> candidatos = cursoRepository.buscarCatalogo(categoria, null).stream()
@@ -596,7 +615,7 @@ public class RoadmapService {
             // nada que sugerir: ni se gasta una llamada a la IA
             return new SugerenciaPrerequisitosResultado(List.of(), aiClient == fallbackClient);
         }
-        List<CursoGrafoNodo> candidatosGrafo = candidatos.stream().map(this::comoNodo).toList();
+        List<CursoGrafoNodo> candidatosGrafo = comoNodos(candidatos);
         SugerenciaPrerequisitosContexto contexto = new SugerenciaPrerequisitosContexto(titulo, descripcion,
                 categoria, nivel);
 
@@ -631,20 +650,52 @@ public class RoadmapService {
     }
 
     private List<CursoGrafoNodo> catalogoActivoComoGrafo() {
-        return cursoRepository.buscarCatalogo(null, null).stream().map(this::comoNodo).toList();
+        return comoNodos(cursoRepository.buscarCatalogo(null, null));
     }
 
-    private CursoGrafoNodo comoNodo(Curso c) {
+    // los cursos como nodos del grafo. El temario y los prerequisitos de TODOS van en dos consultas de bloque:
+    // una por curso aqui es un N+1 que crece con el catalogo
+    private List<CursoGrafoNodo> comoNodos(List<Curso> cursos) {
+        if (cursos.isEmpty()) {
+            return List.of();
+        }
+        List<Long> ids = cursos.stream().map(Curso::getId).toList();
+        cursoRepository.cargarTemario(ids);
+        Map<Long, List<Long>> prerequisitosPorCurso = prerequisitosPorCurso(ids);
+        return cursos.stream()
+                .map(c -> comoNodo(c, prerequisitosPorCurso.getOrDefault(c.getId(), List.of())))
+                .toList();
+    }
+
+    private CursoGrafoNodo comoNodo(Curso c, List<Long> prerequisitoIds) {
         return new CursoGrafoNodo(c.getId(), c.getTitulo(), c.getCategoria(), c.getNivel(),
-                prerequisitosDe(c.getId()), c.getDuracionHoras(),
+                prerequisitoIds, c.getDuracionHoras(),
                 c.getHabilidades().stream().map(Habilidad::getNombre).toList(),
                 c.getDescripcion() == null ? "" : c.getDescripcion(), c.getTemario());
     }
 
-    private List<Long> prerequisitosDe(Long cursoId) {
-        return prerequisitoRepository.findByCursoId(cursoId).stream()
-                .map(CursoPrerequisito::getPrerequisitoId)
-                .toList();
+    // los prerequisitos de varios cursos en una sola consulta
+    private Map<Long, List<Long>> prerequisitosPorCurso(Collection<Long> cursoIds) {
+        if (cursoIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, List<Long>> porCurso = new HashMap<>();
+        for (CursoPrerequisito cp : prerequisitoRepository.findByCursoIdIn(cursoIds)) {
+            porCurso.computeIfAbsent(cp.getCursoId(), k -> new ArrayList<>()).add(cp.getPrerequisitoId());
+        }
+        return porCurso;
+    }
+
+    // cuantas preguntas de examen tiene cada curso, en una sola consulta
+    private Map<Long, Long> preguntasPorCurso(Collection<Long> cursoIds) {
+        if (cursoIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, Long> porCurso = new HashMap<>();
+        for (Object[] fila : preguntaExamenRepository.contarPorCurso(cursoIds)) {
+            porCurso.put((Long) fila[0], (Long) fila[1]);
+        }
+        return porCurso;
     }
 
     private static String limitar(String texto, int max) {

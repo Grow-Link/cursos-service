@@ -30,7 +30,10 @@ public class Curso {
     private Nivel nivel;
 
     // catalogo cerrado: curso_habilidad referencia ids de Habilidad, ya no texto libre
-    @ManyToMany(fetch = FetchType.EAGER)
+    // LAZY: con EAGER, un listado de N cursos hacia N consultas sueltas para esta coleccion (N+1). Se carga en
+    // bloque con LEFT JOIN FETCH desde las consultas del repositorio (ver CursoRepository), dentro de la
+    // transaccion de lectura del servicio.
+    @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(name = "curso_habilidad",
             joinColumns = @JoinColumn(name = "curso_id"),
             inverseJoinColumns = @JoinColumn(name = "habilidad_id"))
@@ -42,8 +45,9 @@ public class Curso {
     private Integer duracionHoras;
 
     // los temas del curso en orden, es lo que el estudiante ve antes de decidir si tomarlo
-    // EAGER porque open-in-view esta apagado
-    @ElementCollection(fetch = FetchType.EAGER)
+    // LAZY por lo mismo que habilidades (N+1). Se inicializa con CursoRepository.cargarTemario, en una SEGUNDA
+    // consulta: hacer JOIN FETCH de las dos colecciones a la vez daria producto cartesiano.
+    @ElementCollection(fetch = FetchType.LAZY)
     @CollectionTable(name = "curso_temario", joinColumns = @JoinColumn(name = "curso_id"))
     @OrderColumn(name = "orden")
     @Column(name = "tema", length = 300)
