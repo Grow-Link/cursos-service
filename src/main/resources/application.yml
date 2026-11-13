@@ -11,7 +11,9 @@ spring:
   datasource:
     url: jdbc:postgresql://localhost:5437/cursos
     username: growlink
-    password: growlink
+    # la contrasena NO va escrita aqui: viene de SPRING_DATASOURCE_PASSWORD (Azure, Docker y la demo la ponen). Para correr contra el
+    # Postgres del docker-compose de este repo: SPRING_DATASOURCE_PASSWORD=growlink mvn spring-boot:run. Las pruebas usan H2 (application-test.yml)
+    password: ${SPRING_DATASOURCE_PASSWORD:}
   jpa:
     hibernate:
       ddl-auto: update
