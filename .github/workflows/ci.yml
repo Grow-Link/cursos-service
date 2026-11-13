@@ -73,3 +73,4 @@ jobs:
           -Dsonar.host.url=https://sonarcloud.io
           -Dsonar.organization=${{ vars.SONAR_ORGANIZATION || 'grow-link' }}
           -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY || 'Grow-Link_cursos-service' }}
+          -Dsonar.qualitygate.wait=${{ vars.SONAR_ESPERAR_PUERTA || 'false' }}

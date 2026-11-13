@@ -1,23 +1,32 @@
 name: CD
 
-# despliega a Azure App Service cada vez que se sube algo a main (o a mano desde la pestana Actions)
+# despliega a Azure App Service cuando CI termina bien en main (o a mano desde la pestana Actions)
 # el ambiente de GitHub que usa es "actual" (main), y si el repo tiene mas ramas desplegables, cada una
 # usa el ambiente con su nombre (Settings > Environments). Cada ambiente guarda su propia app de Azure.
 #
 # Mientras el ambiente no tenga configurada la variable AZURE_WEBAPP_NAME, el despliegue se OMITE
 # (con un aviso) y el workflow queda en verde: solo se prueba que compile y pasen las pruebas.
 on:
-  push:
+  # Solo corre cuando CI termina y salio bien: un cambio que no compila, no pasa las pruebas o (con la variable
+  # SONAR_ESPERAR_PUERTA=true) no pasa la puerta de calidad de SonarCloud no llega a Azure. A mano (workflow_dispatch)
+  # se puede desplegar igual, para una emergencia. Escenario M1: el pipeline se detiene antes del despliegue.
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main, avance, final]
   workflow_dispatch:
 
 jobs:
   desplegar:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    environment: ${{ github.ref_name == 'main' && 'actual' || github.ref_name }}
+    environment: ${{ (github.event.workflow_run.head_branch || github.ref_name) == 'main' && 'actual' || (github.event.workflow_run.head_branch || github.ref_name) }}
     steps:
       - name: Bajar el codigo
         uses: actions/checkout@v4
+        with:
+          # el commit que CI acaba de aprobar, no el ultimo de la rama
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Instalar Java 21
         uses: actions/setup-java@v4
