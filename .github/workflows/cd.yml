@@ -18,18 +18,21 @@ on:
 
 jobs:
   desplegar:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    # SOLO se despliega lo que CI aprobo en un push a este mismo repositorio. workflow_run corre con los secretos del repo y
+    # baja el codigo de la corrida de CI: si no se comprobara el origen, un pull request desde un fork (que puede tener una
+    # rama llamada main) haria correr su codigo aqui, con acceso a los secretos de despliegue.
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository) }}
     runs-on: ubuntu-latest
     environment: ${{ (github.event.workflow_run.head_branch || github.ref_name) == 'main' && 'actual' || (github.event.workflow_run.head_branch || github.ref_name) }}
     steps:
       - name: Bajar el codigo
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # el commit que CI acaba de aprobar, no el ultimo de la rama
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Instalar Java 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
           distribution: temurin
           java-version: 21
@@ -47,7 +50,7 @@ jobs:
       # AZURE_WEBAPP_PUBLISH_PROFILE es un secreto del ambiente (se baja del portal de Azure)
       - name: Subir a Azure App Service
         if: ${{ vars.AZURE_WEBAPP_NAME != '' }}
-        uses: azure/webapps-deploy@v3
+        uses: azure/webapps-deploy@02a81bead70021f5284939794bcec79c271ab383 # v3
         with:
           app-name: ${{ vars.AZURE_WEBAPP_NAME }}
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
