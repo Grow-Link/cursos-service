@@ -7,15 +7,17 @@ import org.springframework.mock.web.MockHttpServletRequest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-// De que IP es una peticion, para el tope por IP (ver LimitePorIpFilter.ipDe). Lo delicado es el puerto: Azure App
-// Service manda el cliente como IP:puerto, y el puerto cambia con cada conexion. Si quedara pegado a la IP, cada
-// conexion contaria como una IP nueva y el tope no frenaria a nadie (eso lo prueba LimitePorIpTest con el servicio
-// levantado); aqui se prueban una por una las formas en que puede llegar la cabecera.
+// De que IP es una peticion, para el tope por IP (ver LimitePorIpFilter.ipDe). La IP sale de getRemoteAddr(), donde
+// el RemoteIpValve de Tomcat ya dejo la que agrego el proxy de confianza (server.forward-headers-strategy=native).
+// Lo delicado es el puerto: Azure App Service manda el cliente como IP:puerto y el valve copia ese valor tal cual,
+// asi que si el puerto quedara pegado a la IP, cada conexion contaria como una IP nueva y el tope no frenaria a
+// nadie (eso lo prueba LimitePorIpTest con el servicio levantado); aqui se prueban una por una las formas en que
+// puede quedar el valor.
 class IpDelClienteTest {
 
-    @ParameterizedTest(name = "X-Forwarded-For \"{0}\" es la IP {1}")
+    @ParameterizedTest(name = "getRemoteAddr() \"{0}\" es la IP {1}")
     @CsvSource(delimiter = '|', value = {
-            // IPv4, con y sin el puerto que agrega el balanceador
+            // IPv4, con y sin el puerto que agrega el proxy
             "203.0.113.7                       | 203.0.113.7",
             "203.0.113.7:51234                 | 203.0.113.7",
             // IPv6 con puerto: va entre corchetes, y lo que cuenta es lo de adentro
@@ -24,39 +26,46 @@ class IpDelClienteTest {
             // IPv6 sin corchetes: sus ':' son de la direccion, no hay puerto que quitar
             "2001:db8::1                       | 2001:db8::1",
             "::1                               | ::1",
-            // varios saltos: cuenta el primero (el cliente), y a ese tambien se le quita el puerto
-            "203.0.113.7:51234, 10.0.0.4:443   | 203.0.113.7",
-            "[2001:db8::1]:51234, 10.0.0.4     | 2001:db8::1",
-            // espacios alrededor, como los deja un proxy al concatenar
-            "'  203.0.113.7:51234 , 10.0.0.4'  | 203.0.113.7",
+            // espacios alrededor
+            "'  203.0.113.7:51234  '           | 203.0.113.7",
     })
-    void laIpSaleSinElPuerto(String cabecera, String esperada) {
-        assertThat(LimitePorIpFilter.ipDe(conCabecera(cabecera))).isEqualTo(esperada);
+    void laIpSaleSinElPuerto(String remoteAddr, String esperada) {
+        assertThat(LimitePorIpFilter.ipDe(desde(remoteAddr))).isEqualTo(esperada);
     }
 
     @Test
     void elMismoClienteDesdeDosConexionesEsLaMismaIp() {
         // lo que de verdad importa: dos conexiones del mismo cliente comparten el contador
-        assertThat(LimitePorIpFilter.ipDe(conCabecera("198.51.100.23:40001")))
-                .isEqualTo(LimitePorIpFilter.ipDe(conCabecera("198.51.100.23:40002")))
-                .isEqualTo(LimitePorIpFilter.ipDe(conCabecera("198.51.100.23")));
+        assertThat(LimitePorIpFilter.ipDe(desde("198.51.100.23:40001")))
+                .isEqualTo(LimitePorIpFilter.ipDe(desde("198.51.100.23:40002")))
+                .isEqualTo(LimitePorIpFilter.ipDe(desde("198.51.100.23")));
     }
 
     @Test
-    void siDespuesDeQuitarElPuertoNoQuedaNadaSeUsaLaIpDelSocket() {
-        // un valor como ":51234" no dice de quien es la peticion: se cae a la del socket, igual que sin cabecera
-        MockHttpServletRequest peticion = conCabecera(":51234");
-        peticion.setRemoteAddr("192.0.2.10");
+    void elXForwardedForQueMandeElClienteNoCambiaLaClave() {
+        // la razon de contar la del socket: esta cabecera la escribe quien llama. Cuando se contaba su primer
+        // valor, bastaba mandar uno distinto en cada peticion para tener un contador nuevo cada vez y no toparse
+        // nunca con el limite. Detras de un proxy de confianza, el RemoteIpValve ya puso en getRemoteAddr() el
+        // valor que agrego el proxy, y lo que el cliente escriba no se mira
+        MockHttpServletRequest peticion = desde("203.0.113.7:51234");
+        peticion.addHeader("X-Forwarded-For", "1.2.3.4");
 
-        assertThat(LimitePorIpFilter.ipDe(peticion)).isEqualTo("192.0.2.10");
+        assertThat(LimitePorIpFilter.ipDe(peticion)).isEqualTo("203.0.113.7");
     }
 
     @Test
-    void sinCabeceraSeUsaLaIpDelSocket() {
+    void siDespuesDeQuitarElPuertoNoQuedaNadaNoSeInventaUnaIp() {
+        // un valor como ":51234" no dice de quien es la peticion: cae en una clave aparte, no en una vacia que
+        // juntaria en un solo contador a clientes que no tienen nada que ver
+        assertThat(LimitePorIpFilter.ipDe(desde(":51234"))).isEqualTo("desconocida");
+    }
+
+    @Test
+    void sinIpDeSocketTampocoSeInventaUnaIp() {
         MockHttpServletRequest peticion = new MockHttpServletRequest();
-        peticion.setRemoteAddr("192.0.2.11");
+        peticion.setRemoteAddr(null);
 
-        assertThat(LimitePorIpFilter.ipDe(peticion)).isEqualTo("192.0.2.11");
+        assertThat(LimitePorIpFilter.ipDe(peticion)).isEqualTo("desconocida");
     }
 
     @Test
@@ -66,9 +75,20 @@ class IpDelClienteTest {
         assertThat(LimitePorIpFilter.sinPuerto("[]")).isEqualTo("[]");
     }
 
-    private static MockHttpServletRequest conCabecera(String valor) {
+    @Test
+    void laIpv6SinCorchetesYConPuertoSeQuedaConElPuerto() {
+        // CASO QUE NO SE PUEDE RESOLVER, escrito aqui para que quede claro cual es el limite: "2001:db8::1:51234"
+        // es indistinguible de una IPv6 a secas (todos sus ':' podrian ser de la direccion), asi que se devuelve
+        // entera. Si algun dia un proxy mandara la IPv6 asi, sin corchetes y con puerto, cada conexion de ese
+        // cliente seria otra clave y el tope no lo frenaria. El estandar y Azure usan corchetes, que es el caso
+        // de arriba y si queda bien contado.
+        assertThat(LimitePorIpFilter.ipDe(desde("2001:db8::1:51234"))).isEqualTo("2001:db8::1:51234");
+        assertThat(LimitePorIpFilter.ipDe(desde("2001:db8::1:51235"))).isEqualTo("2001:db8::1:51235");
+    }
+
+    private static MockHttpServletRequest desde(String remoteAddr) {
         MockHttpServletRequest peticion = new MockHttpServletRequest();
-        peticion.addHeader(LimitePorIpFilter.CABECERA_IP, valor);
+        peticion.setRemoteAddr(remoteAddr);
         return peticion;
     }
 }

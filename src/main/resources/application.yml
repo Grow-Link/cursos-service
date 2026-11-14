@@ -1,5 +1,16 @@
 server:
   port: ${PORT:8086}
+  # ATRIBUTO: seguridad. Delante del servicio hay un proxy (el front end de Azure App Service, nginx en el stack
+  # local), asi que la IP del socket es la suya y no la del cliente. Con `native`, el RemoteIpValve de Tomcat
+  # traduce X-Forwarded-For y X-Forwarded-Proto a getRemoteAddr(), getScheme() e isSecure() antes de que corra
+  # cualquier filtro, y solo le cree a esas cabeceras cuando la conexion llega de un proxy de confianza
+  # (server.tomcat.remoteip.internal-proxies, que por defecto son las redes privadas y 169.254.x.x). Asi el tope
+  # por IP cuenta la IP que pone el proxy y no la que escriba el cliente (ver LimitePorIpFilter).
+  #
+  # Va escrito a proposito: sin esta linea, Spring Boot lo decide solo segun la plataforma que detecte
+  # (CloudPlatform.AZURE_APP_SERVICE con las variables WEBSITE_*), asi que el valve estaba puesto en Azure y no
+  # en local, y la configuracion no decia nada de eso en ninguna parte.
+  forward-headers-strategy: native
 
 spring:
   application:
@@ -141,9 +152,9 @@ roadmap:
       demora-segundos: ${ROADMAP_IA_CORTACIRCUITO_DEMORA_SEGUNDOS:10}
 
 # ATRIBUTO: seguridad y disponibilidad. Tope de peticiones por IP (ver LimitePorIpFilter), para todos los
-# endpoints y antes de la seguridad y de la base de datos. La IP real se lee del primer valor de X-Forwarded-For
-# (delante hay un balanceador) y si no llega, de la del socket. Cada replica cuenta por su lado.
-# maximo-por-minuto: 0 lo apaga.
+# endpoints y antes de la seguridad y de la base de datos. La IP se cuenta de getRemoteAddr() sin el puerto: la
+# pone el proxy de confianza a traves del RemoteIpValve (ver server.forward-headers-strategy arriba), no el
+# cliente. Cada replica cuenta por su lado. maximo-por-minuto: 0 lo apaga.
 seguridad:
   limite-ip:
     maximo-por-minuto: ${LIMITE_IP_MAXIMO_POR_MINUTO:300}

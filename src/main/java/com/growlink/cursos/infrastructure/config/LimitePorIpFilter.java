@@ -32,6 +32,14 @@ import java.util.concurrent.ConcurrentHashMap;
 // LimiteDeGeneraciones: el servicio sigue sin estado compartido, asi que con N replicas el tope real es de hasta
 // N veces el configurado. maximo-por-minuto: 0 lo apaga.
 //
+// La clave es la IP del socket (request.getRemoteAddr()), NO el primer valor de X-Forwarded-For: esa cabecera la
+// escribe quien llama, asi que contarla dejaba saltarse el tope mandando un valor distinto en cada peticion.
+// Delante del servicio hay un proxy, y de eso se encarga el RemoteIpValve de Tomcat
+// (server.forward-headers-strategy=native, ver application.yml): el valve traduce X-Forwarded-For a
+// getRemoteAddr() ANTES de los filtros, y solo le cree al valor cuando la conexion viene de un proxy de
+// confianza (internalProxies). Lo que un cliente escriba de su lado queda detras del valor que agrega el proxy y
+// no llega a ser la clave.
+//
 // Va despues de SolicitudIdFilter para que la linea del log salga con el X-Request-Id de la peticion: el patron
 // del log del proyecto ya lo imprime en cada linea (%X{rid}, ver application.yml), venga del cliente o se haya
 // creado aqui.
@@ -40,10 +48,6 @@ import java.util.concurrent.ConcurrentHashMap;
 public class LimitePorIpFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(LimitePorIpFilter.class);
-
-    // La IP de verdad: delante del servicio hay un balanceador, asi que la del socket es la suya, no la del
-    // cliente. El primer valor de X-Forwarded-For es el cliente original (los que siguen son los proxies).
-    public static final String CABECERA_IP = "X-Forwarded-For";
 
     // tope de IPs vigiladas a la vez: un techo para que una lluvia de IPs distintas no haga crecer la memoria
     private static final int MAX_IPS = 50_000;
@@ -96,22 +100,23 @@ public class LimitePorIpFilter extends OncePerRequestFilter {
                 + esperaSegundos + " s y vuelve a intentarlo.\"}");
     }
 
-    /** La IP del cliente: el primer valor de X-Forwarded-For si llega (sin puerto), y si no la del socket. */
+    /** La IP del cliente: la del socket, sin el puerto. */
     static String ipDe(HttpServletRequest request) {
-        String reenviada = request.getHeader(CABECERA_IP);
-        if (reenviada != null) {
-            String primera = sinPuerto(reenviada.split(",")[0].trim());
-            if (!primera.isEmpty()) {
-                return primera;
-            }
-        }
         String socket = request.getRemoteAddr();
-        return socket == null || socket.isBlank() ? "desconocida" : socket;
+        if (socket == null || socket.isBlank()) {
+            return "desconocida";
+        }
+        String ip = sinPuerto(socket.trim());
+        // un valor del que no queda nada al quitarle el puerto (p.ej. ":51234") no dice de quien es la peticion.
+        // Se cuenta aparte en vez de devolver vacio: una clave vacia juntaria en un solo contador a clientes que
+        // no tienen nada que ver
+        return ip.isEmpty() ? "desconocida" : ip;
     }
 
-    // Azure App Service manda el cliente en X-Forwarded-For como IP:puerto (p.ej. 203.0.113.7:51234), y ese puerto
-    // es el de la conexion del cliente: cambia con cada conexion nueva. Si se contara con el puerto, cada conexion
-    // seria una "IP" distinta que empieza de cero y el tope no frenaria nunca a nadie. Las formas que pueden llegar:
+    // Azure App Service manda el cliente en X-Forwarded-For como IP:puerto (p.ej. 203.0.113.7:51234), y el
+    // RemoteIpValve copia ese valor a getRemoteAddr() tal cual, con el puerto incluido. Ese puerto es el de la
+    // conexion del cliente: cambia con cada conexion nueva. Si se contara con el puerto, cada conexion seria una
+    // "IP" distinta que empieza de cero y el tope no frenaria nunca a nadie. Las formas que pueden llegar:
     //
     //   203.0.113.7             IPv4 sola                        -> tal cual
     //   203.0.113.7:51234       IPv4 con puerto                  -> 203.0.113.7
@@ -119,8 +124,12 @@ public class LimitePorIpFilter extends OncePerRequestFilter {
     //   [2001:db8::1]           IPv6 entre corchetes, sin puerto -> 2001:db8::1
     //   2001:db8::1             IPv6 sola                        -> tal cual: tiene varios ':' y son de la direccion
     //
-    // Un solo ':' solo puede ser el del puerto, porque una IPv6 sin corchetes siempre trae mas de uno. Un valor que
-    // queda vacio (p.ej. ":51234") se descarta y se usa la IP del socket, como cuando no llega la cabecera.
+    // Un solo ':' solo puede ser el del puerto, porque una IPv6 sin corchetes siempre trae mas de uno.
+    //
+    // OJO con el caso que no se puede resolver: una IPv6 sin corchetes Y con puerto (2001:db8::1:51234) es
+    // indistinguible de una IPv6 a secas, asi que se devuelve entera y el puerto queda en la clave. No se conoce
+    // proxy que la mande asi (el estandar y Azure usan corchetes), pero si apareciera uno, el tope dejaria de
+    // frenar a ese cliente. Lo cubre IpDelClienteTest para que quede escrito cual es el limite.
     // Es el mismo arreglo que en usuarios-service (ver ADR-0011 en el repo infra).
     static String sinPuerto(String valor) {
         if (valor.startsWith("[")) {
