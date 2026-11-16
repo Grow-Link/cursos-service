@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpMethod;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -69,6 +71,16 @@ class AccesoEnLogTest {
         }
 
         assertThat(lineaDeAcceso(salida, rid).get("message").asText()).startsWith("peticion OTRO ");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"})
+    void losMetodosHttpDeSiempreSeAnotanConSuNombre(String metodo, CapturedOutput salida) throws Exception {
+        String rid = "prueba-acceso-metodo-" + metodo;
+
+        mockMvc.perform(request(HttpMethod.valueOf(metodo), "/api/cursos").header("X-Request-Id", rid)).andReturn();
+
+        assertThat(lineaDeAcceso(salida, rid).get("message").asText()).startsWith("peticion " + metodo + " ");
     }
 
     @Test
