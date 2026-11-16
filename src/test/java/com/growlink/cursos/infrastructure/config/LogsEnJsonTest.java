@@ -81,7 +81,8 @@ class LogsEnJsonTest {
 
     // la linea de la salida que trae `texto`: tiene que haber exactamente una y tiene que ser un objeto JSON entero
     private static JsonNode unicaLineaQueContiene(CapturedOutput salida, String texto) throws Exception {
-        List<String> lineas = salida.getOut().lines().filter(l -> l.contains(texto)).toList();
+        // la linea de acceso de SolicitudIdFilter (una por peticion, con el mismo rid) tiene su propia prueba: AccesoEnLogTest
+        List<String> lineas = salida.getOut().lines().filter(l -> l.contains(texto) && !l.contains("SolicitudIdFilter")).toList();
         assertThat(lineas).as("lineas con \"" + texto + "\"").hasSize(1);
         JsonNode linea = JSON.readTree(lineas.get(0));
         assertThat(linea.isObject()).isTrue();

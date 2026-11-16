@@ -24,6 +24,11 @@ public class MetricasDeRoadmap {
 
     public MetricasDeRoadmap(MeterRegistry registro) {
         this.registro = registro;
+        // Las dos fuentes existen desde el arranque, en 0. Un contador que nace al primer incremento (ya en 1) hace que increase()
+        // de Prometheus no cuente ese primero y el tablero "por quien los armo" muestre 0 aunque haya habido un roadmap.
+        for (FuenteRoadmap fuente : FuenteRoadmap.values()) {
+            registro.counter("growlink.roadmap.generaciones", "fuente", fuente.name());
+        }
     }
 
     public void generacion(FuenteRoadmap fuente) {
